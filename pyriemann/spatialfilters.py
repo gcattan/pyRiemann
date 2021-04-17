@@ -8,6 +8,7 @@ from .utils.covariance import _check_est
 from .utils.mean import mean_covariance
 from .utils.ajd import ajd_pham
 from .utils.mean import _check_mean_method
+from scipy.linalg import sqrtm
 
 
 class Xdawn(BaseEstimator, TransformerMixin):
@@ -462,3 +463,35 @@ class SPoC(CSP):
         self.patterns_ = A[:, 0:self.nfilter].T
 
         return self
+
+def ld(A, B):
+	return numpy.linalg.lstsq(A,B)[0]
+
+def rd(A, B):
+	return numpy.transpose(ld(numpy.transpose(B), numpy.transpose(A)))
+
+class SimplifiedSTCP (BaseEstimator, TransformerMixin):
+	def __init__(self, target, nbComponents):
+		self.target = target
+		self.nbComponents = nbComponents
+		self.B = None
+
+	def fit(self, X, y):
+		C = numpy.array([numpy.cov(epoch) for epoch in X]).mean(0)
+		C1_demi = sqrtm(C)
+	
+		C_TA = numpy.cov(X[y == self.target].mean(0))
+    
+		P = rd(ld(C1_demi, C_TA), C1_demi)
+    
+		eigenValues, eigenVectors = numpy.linalg.eig(P)
+
+		idx = eigenValues.argsort()[::-1]   
+		eigenValues = eigenValues[idx]
+		
+		eigenVectors = numpy.dot(numpy.transpose(eigenVectors), C1_demi)[:,idx]
+		self.B = eigenVectors[:,0:self.nbComponents]
+		return self
+
+	def transform(self, X):
+		return numpy.array(numpy.array([numpy.dot(numpy.transpose(self.B), x) for x in X]))
