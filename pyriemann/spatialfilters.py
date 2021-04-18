@@ -4,7 +4,7 @@ import numpy
 from scipy.linalg import eigh, eig
 from sklearn.base import BaseEstimator, TransformerMixin
 
-from .utils import matldiv, matrdiv
+from .utils.utils import matldiv, matrdiv
 from .utils.covariance import _check_est
 from .utils.mean import mean_covariance
 from .utils.ajd import ajd_pham
@@ -466,7 +466,7 @@ class SPoC(CSP):
         return self
 
 class SimplifiedSTCP (BaseEstimator, TransformerMixin):
-  """Implementation of a simplified STCP with Covariance as input.
+  """Implementation of a simplified STCP with epochs of signal as input.
 
   This is a simplified implementation of the STCP [1] modified by Dr. Florent Bouchard, 
   and used in [2]. It consist in selecting the components which maximize
@@ -480,13 +480,6 @@ class SimplifiedSTCP (BaseEstimator, TransformerMixin):
         The number of sensors to keep. 
   metric : str (default "euclid")
         The metric for the estimation of mean covariance matrices
-
-  Attributes
-  ----------
-  filters_ : ndarray
-        If fit, the SPoC spatial filters, else None.
-  patterns_ : ndarray
-        If fit, the SPoC spatial patterns, else None.
 
   References
   ----------
@@ -511,8 +504,8 @@ class SimplifiedSTCP (BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    X : ndarray, shape (n_trials, n_channels, n_channels)
-          ndarray of covariance.
+    X : ndarray, shape (n_trials, n_channels, n_samples)
+          ndarray of epochs.
     y : ndarray shape (n_trials, 1)
           target variable corresponding to each trial.
 
@@ -522,13 +515,13 @@ class SimplifiedSTCP (BaseEstimator, TransformerMixin):
         The SimplifiedSTCP instance.
     """
     # Compute the root of mean covariance epochs
-    covEpochs = [mean_covariance(epoch, self.metric) for epoch in X]
-    meanCovEpochs = covEpochs.mean(axis=0)
+    covEpochs = [numpy.cov(epoch) for epoch in X]
+    meanCovEpochs = mean_covariance(covEpochs, self.metric)
     sqrtOfMeanCovEpochs = sqrtm(meanCovEpochs)
 	
     # Compute the covariance of mean target epochs
-    meanTargetEpochs = X[y == self.target].mean(0)
-    covOfMeanTargetEpochs = mean_covariance(meanTargetEpochs, self.metric)
+    meanTargetEpochs = X[y == self.target].mean(axis=0)
+    covOfMeanTargetEpochs = numpy.cov(meanTargetEpochs)
     
     # Compute signal-to-noise matrix
     signalToNoise = matrdiv(matldiv(sqrtOfMeanCovEpochs, covOfMeanTargetEpochs), sqrtOfMeanCovEpochs)
