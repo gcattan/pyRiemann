@@ -4,6 +4,7 @@ import numpy
 from scipy.linalg import eigh
 from sklearn.base import BaseEstimator, TransformerMixin
 
+from .utils import matldiv, matrdiv
 from .utils.covariance import _check_est
 from .utils.mean import mean_covariance
 from .utils.ajd import ajd_pham
@@ -464,34 +465,87 @@ class SPoC(CSP):
 
         return self
 
-def ld(A, B):
-	return numpy.linalg.lstsq(A,B)[0]
-
-def rd(A, B):
-	return numpy.transpose(ld(numpy.transpose(B), numpy.transpose(A)))
-
 class SimplifiedSTCP (BaseEstimator, TransformerMixin):
-	def __init__(self, target, nbComponents):
-		self.target = target
-		self.nbComponents = nbComponents
-		self.B = None
+  """Implementation of a simplified STCP with Covariance as input.
 
-	def fit(self, X, y):
-		C = numpy.array([numpy.cov(epoch) for epoch in X]).mean(0)
-		C1_demi = sqrtm(C)
+  This is a simplified implementation of the STCP [1] modified by Dr. Florent Bouchard, 
+  and used in [2]. It consist in selecting the components which maximize
+  the signal-to-noise ratio.
+
+  Parameters
+  ----------
+  target : typeof label
+        the label of the target class
+  nComponents : int (default 4)
+        The number of sensors to keep. 
+  metric : str (default "euclid")
+        The metric for the estimation of mean covariance matrices
+
+  Attributes
+  ----------
+  filters_ : ndarray
+        If fit, the SPoC spatial filters, else None.
+  patterns_ : ndarray
+        If fit, the SPoC spatial patterns, else None.
+
+  References
+  ----------
+  [1] M. Congedo, L. Korczowski, A. Delorme, and F. Lopes Da Silva,
+      ‘Spatio-temporal common pattern: A companion method for ERP analysis in the time domain’,
+      J. Neurosci. Methods, vol. 267, pp. 74–88, 2016. 
+  [2] G. H. Cattan, A. Andreev, C. Mendoza, and M. Congedo,
+      ‘A Comparison of Mobile VR Display Running on an Ordinary Smartphone
+       With Standard PC Display for P300-BCI Stimulus Presentation’,
+      IEEE Transactions on Games, vol. 13, no. 1, pp. 68–77
+      doi: 10.1109/TG.2019.2957963.
+
+  """
+  def __init__(self, target, nbComponents=4, metric='euclid'):
+    self.target = target
+    self.nbComponents = nbComponents
+    self.metric = metric
+    self.B = None
+
+  def fit(self, X, y):
+    """Train spatial filters.
+
+    Parameters
+    ----------
+    X : ndarray, shape (n_trials, n_channels, n_channels)
+          ndarray of covariance.
+    y : ndarray shape (n_trials, 1)
+          target variable corresponding to each trial.
+
+    Returns
+    -------
+    self : SimplifiedSTCP instance
+        The SimplifiedSTCP instance.
+    """
+    # Compute the root of mean covariance epochs
+    covEpochs = [mean_covariance(epoch, self.metric) for epoch in X]
+    meanCovEpochs = covEpochs.mean(axis=0)
+    sqrtOfMeanCovEpochs = sqrtm(meanCovEpochs)
 	
-		C_TA = numpy.cov(X[y == self.target].mean(0))
+    # Compute the covariance of mean target epochs
+    meanTargetEpochs = X[y == self.target].mean(0)
+    covOfMeanTargetEpochs = mean_covariance(meanTargetEpochs, self.metric)
     
-		P = rd(ld(C1_demi, C_TA), C1_demi)
+    # Compute signal-to-noise matrix
+    signalToNoise = matrdiv(matldiv(sqrtOfMeanCovEpochs, covOfMeanTargetEpochs), sqrtOfMeanCovEpochs)
     
-		eigenValues, eigenVectors = numpy.linalg.eig(P)
+    # Compute the eigen decomposition of the signal-to-noise matrix
+    eigenValues, eigenVectors = numpy.linalg.eig(signalToNoise)
 
-		idx = eigenValues.argsort()[::-1]   
-		eigenValues = eigenValues[idx]
-		
-		eigenVectors = numpy.dot(numpy.transpose(eigenVectors), C1_demi)[:,idx]
-		self.B = eigenVectors[:,0:self.nbComponents]
-		return self
+    # sort eigen vector based on eigen values
+    idx = eigenValues.argsort()[::-1]   
+    eigenValues = eigenValues[idx]
+    eigenVectors = numpy.dot(numpy.transpose(eigenVectors), sqrtOfMeanCovEpochs)[:,idx]
 
-	def transform(self, X):
-		return numpy.array(numpy.array([numpy.dot(numpy.transpose(self.B), x) for x in X]))
+    # select the `nbComponents` eigen vectors having the higest eigen values
+    self.B = numpy.array(eigenVectors[:,0:self.nbComponents])
+
+    return self
+
+  def transform(self, X):
+    # B' * X
+    return numpy.array(numpy.array([numpy.dot(self.B.T, x) for x in X]))
