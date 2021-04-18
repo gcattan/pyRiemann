@@ -504,7 +504,7 @@ class SimplifiedSTCP (BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    X : ndarray, shape (n_trials, n_channels, n_samples)
+    X : ndarray, shape (n_trials, n_channels, n_sample)
           ndarray of epochs.
     y : ndarray shape (n_trials, 1)
           target variable corresponding to each trial.
@@ -515,7 +515,7 @@ class SimplifiedSTCP (BaseEstimator, TransformerMixin):
         The SimplifiedSTCP instance.
     """
     # Compute the root of mean covariance epochs
-    covEpochs = [numpy.cov(epoch) for epoch in X]
+    covEpochs = numpy.array([numpy.array(numpy.cov(epoch)) for epoch in X])
     meanCovEpochs = mean_covariance(covEpochs, self.metric)
     sqrtOfMeanCovEpochs = sqrtm(meanCovEpochs)
 	
