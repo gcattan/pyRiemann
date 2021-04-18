@@ -1,7 +1,7 @@
 """Spatial filtering function."""
 import numpy
 
-from scipy.linalg import eigh
+from scipy.linalg import eigh, eig
 from sklearn.base import BaseEstimator, TransformerMixin
 
 from .utils import matldiv, matrdiv
@@ -534,7 +534,7 @@ class SimplifiedSTCP (BaseEstimator, TransformerMixin):
     signalToNoise = matrdiv(matldiv(sqrtOfMeanCovEpochs, covOfMeanTargetEpochs), sqrtOfMeanCovEpochs)
     
     # Compute the eigen decomposition of the signal-to-noise matrix
-    eigenValues, eigenVectors = numpy.linalg.eig(signalToNoise)
+    eigenValues, eigenVectors = eig(signalToNoise)
 
     # sort eigen vector based on eigen values
     idx = eigenValues.argsort()[::-1]   
