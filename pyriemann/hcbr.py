@@ -5,7 +5,7 @@ from subprocess import Popen, PIPE
 import numpy as np
 import os
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.metrics import accuracy_score, matthews_corrcoef
+from sklearn.metrics import accuracy_score, matthews_corrcoef, balanced_accuracy_score
 from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold, RepeatedKFold
 from sklearn.datasets import load_svmlight_file
 
@@ -26,16 +26,17 @@ def vectorize(X):
 def dump_casebase(X):
   with open(casebase, "w") as f:
     vectors = vectorize(X)
+    f.write(" ".join(str(e) for e in vectors[0]))
+    f.write("\n")
     for v in vectors:
       f.write(" ".join(str(e) for e in v))
       f.write("\n")
-    f.write(" ".join(str(e) for e in vectors[0]))
 
 def dump_outcomes(y):
   with open(outcomes, "w") as f:
       if y is not None:
+        f.write(str(y[0])+"\n")
         f.write("".join(str(e)+"\n" for e in y))
-        f.write(str(y[0]))
 
 def equals(x1, x2):
   for i1, i2 in zip(x1, x2):
@@ -71,7 +72,7 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             self.params['serialization']['serialize'] = True
             self.params['parameters']['no_prediction'] = True
             self.params['deserialization']['deserialize'] = False
-            self.params['parameters']['limit'] = len(X)
+            self.params['parameters']['limit'] = len(X) 
             with open(self.local_training_param_file, 'w') as f:
                 f.write(json.dumps(self.params, indent=4))
         except Exception as e:
@@ -95,13 +96,16 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         return self
 
     def index_of(self, x):
+      el = min(self.X, key=lambda e:abs(np.trace(e)-np.trace(x)))
       for i in range(len(self.X)):
-        if equals(x, self.X[i]):
+        if equals(self.X[i], el):
           return i
       return -1
 
     def labels_of(self, X):
       indexes = [self.index_of(x) for x in X]
+      print(len(np.unique(indexes)),len(indexes))
+      # assert(len(np.unique(indexes)) == len(indexes))
       return [self.y[i] for i in indexes]
 
     def predict(self, X, y=None):
@@ -136,7 +140,6 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             print(err)
             output = open('predictions.txt', 'r').read().strip()
             res = [int(o.split()[2]) for o in output.splitlines()[1:]]
-            print(res)
         except Exception as e:
             print("Could not make prediction")
             print(e)
@@ -145,5 +148,5 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
 
     def score(self, X, y=None):
         pred = self.predict(X, y)
-        return accuracy_score(y, pred)
+        return balanced_accuracy_score(y, pred)
 
