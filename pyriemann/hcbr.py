@@ -16,28 +16,6 @@ HCBR_BIN = this_directory + '\\HCBR.exe'
 casebase = this_directory + '\\casebase.txt'
 outcomes = this_directory  + '\\outcomes.txt'
 
-def vectorize(X):
-  nbEpoch = len(X)
-  nbChannels = len(X[0])
-  nbSamples = len(X[0][0])
-  vectors = X.reshape(nbEpoch, nbChannels*nbSamples)
-  return vectors
-
-def dump_casebase(X):
-  with open(casebase, "w") as f:
-    vectors = vectorize(X)
-    f.write(" ".join(str(e) for e in vectors[0]))
-    f.write("\n")
-    for v in vectors:
-      f.write(" ".join(str(e) for e in v))
-      f.write("\n")
-
-def dump_outcomes(y):
-  with open(outcomes, "w") as f:
-      if y is not None:
-        f.write(str(y[0])+"\n")
-        f.write("".join(str(e)+"\n" for e in y))
-
 def equals(x1, x2):
   for i1, i2 in zip(x1, x2):
     for j1, j2 in zip(i1, i2):
@@ -47,7 +25,10 @@ def equals(x1, x2):
 
 class HCBRClassifier(BaseEstimator, ClassifierMixin):  
 
-    def __init__(self, params_file, X=None, y=None):
+    def __init__(self, params_file, verbose=0, X=None, y=None, processVector=lambda v:v):
+        self.verbose = verbose
+        self.log("Initializing...")
+        self.processVector = processVector
         self.params_file = params_file
         self.params = None
         self.X = X
@@ -55,18 +36,46 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         self.local_training_param_file = this_directory + '\\training.params.json'
         self.HCBR_BIN = HCBR_BIN
 
+    def log(self, *values, level = 1):
+      if self.verbose >= level:
+        print("[HCBR] ", *values)
+
+    def vectorize(self, X):
+      nbEpoch = len(X)
+      nbChannels = len(X[0])
+      nbSamples = len(X[0][0])
+      vectors = X.reshape(nbEpoch, nbChannels*nbSamples)
+      return [self.processVector(v) for v in vectors]
+
+    def dump_casebase(self, X):
+      with open(casebase, "w") as f:
+        vectors = self.vectorize(X)
+        self.log("size of vector is", len(vectors[0]))
+        f.write(" ".join(str(e) for e in vectors[0]))
+        f.write("\n")
+        for v in vectors:
+          f.write(" ".join(str(e) for e in v))
+          f.write("\n")
+
+    def dump_outcomes(self, y):
+      with open(outcomes, "w") as f:
+          if y is not None:
+            f.write(str(y[0])+"\n")
+            f.write("".join(str(e)+"\n" for e in y))
+
     def fit(self, X, y=None):
-        print("Fitting...")
+        self.log("Fitting", X.shape)
         # Check parameters
         try:
+            self.log("Loading parameter file ", self.params_file)
             self.params = json.load(open(self.params_file))
         except Exception as e:
-            print("Could not load parameter file...")
-            print(e)
+            self.log("Could not load parameter file...", e)
             return None
 
         # Modifying configuration
         try:
+            self.log("Auto-config parameter file...")
             self.params["input"]["casebase"] = casebase
             self.params["input"]["outcomes"] = outcomes
             self.params['serialization']['serialize'] = True
@@ -76,21 +85,21 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             with open(self.local_training_param_file, 'w') as f:
                 f.write(json.dumps(self.params, indent=4))
         except Exception as e:
-            print("Could not modify and save the parameter file")
-            print(e)
+            self.log("Could not modify and save the parameter file: ", e)
             return None
 
         # Build the model and output the files
         try:
-            dump_casebase(X)
-            dump_outcomes(y)
+            self.log("Building model and serializing..")
+            self.dump_casebase(X)
+            self.dump_outcomes(y)
             cmd = [self.HCBR_BIN, '--params', self.local_training_param_file]
             p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
             output, err = p.communicate()
-            print(err)
+            self.log("output = ", output, level=2)
+            self.log("error = ", error, level=2)
         except Exception as e:
-            print("Could not build the model")
-            print(e)
+            self.log("Could not build the model: ", e)
             return None
 
         return self
@@ -103,17 +112,22 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
       return -1
 
     def labels_of(self, X):
+      self.log("Getting Xs with closest traces")
       indexes = [self.index_of(x) for x in X]
-      print(len(np.unique(indexes)),len(indexes))
-      # assert(len(np.unique(indexes)) == len(indexes))
+      iLen = len(indexes)
+      iUniqueLen = len(np.unique(indexes))
+      if iLen != iUniqueLen:
+        self.log("[Warning] Could not retrieve all labels. Error estimate is (%): ", (iLen - iUniqueLen)/iLen * 100)
       return [self.y[i] for i in indexes]
 
     def predict(self, X, y=None):
-        print("predicting...", len(X))
+        self.log("Predicting", X.shape)
         if y is None:
+          self.log("Labels are null. Auto-detect labels using self.X")
           y = self.labels_of(X)
         # Modifying configuration
         try:
+            self.log("Auto-config parameter file...")
             self.params["input"]["casebase"] = casebase
             self.params["input"]["outcomes"] = outcomes
             self.params['serialization']['serialize'] = False
@@ -125,28 +139,28 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             with open(self.local_training_param_file, 'w') as f:
                 f.write(json.dumps(self.params, indent=4))
         except Exception as e:
-            print("Could not modify and save the parameter file")
-            print(e)
+            self.log("Could not modify and save the parameter file: ", e)
             return None
 
         # Build the model and output the files
         res = []
         try:
-            dump_casebase(X)
-            dump_outcomes(y)
+            self.dump_casebase(X)
+            self.dump_outcomes(y)
             cmd = [self.HCBR_BIN, '--params', self.local_training_param_file]
             p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
             output, err = p.communicate()
-            print(err)
+            self.log("output = ", output, level=2)
+            self.log("err = ", err, level=2)
             output = open('predictions.txt', 'r').read().strip()
             res = [int(o.split()[2]) for o in output.splitlines()[1:]]
         except Exception as e:
-            print("Could not make prediction")
-            print(e)
+            self.log("Could not make prediction: ", e)
             return None
         return res
 
     def score(self, X, y=None):
+        self.log("Scoring")
         pred = self.predict(X, y)
         return balanced_accuracy_score(y, pred)
 
