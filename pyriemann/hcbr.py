@@ -2,10 +2,11 @@ import json
 from random import randint
 from subprocess import Popen, PIPE
 
+from .utils.distance import distance
 import numpy as np
 import os
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.metrics import accuracy_score, matthews_corrcoef, balanced_accuracy_score
+from sklearn.metrics import accuracy_score, matthews_corrcoef, balanced_accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold, RepeatedKFold
 from sklearn.datasets import load_svmlight_file
 
@@ -18,14 +19,18 @@ outcomes = this_directory  + '\\outcomes.txt'
 
 def equals(x1, x2):
   for i1, i2 in zip(x1, x2):
-    for j1, j2 in zip(i1, i2):
-      if not j1 == j2:
+    try:
+      for j1, j2 in zip(i1, i2):
+        if not j1 == j2:
+          return False
+    except Exception as e:
+      if not i1 == i2:
         return False
   return True
 
 class HCBRClassifier(BaseEstimator, ClassifierMixin):  
 
-    def __init__(self, params_file, verbose=0, X=None, y=None, processVector=lambda v:v):
+    def __init__(self, params_file, verbose=0, X=None, y=None, processVector=lambda v, _0, _1:v):
         self.verbose = verbose
         self.log("Initializing...")
         self.processVector = processVector
@@ -41,11 +46,17 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         print("[HCBR] ", *values)
 
     def vectorize(self, X):
+      self.log("Vectorize")
       nbEpoch = len(X)
       nbChannels = len(X[0])
-      nbSamples = len(X[0][0])
-      vectors = X.reshape(nbEpoch, nbChannels*nbSamples)
-      return [self.processVector(v) for v in vectors]
+      try:
+        nbSamples = len(X[0][0])
+        vectors = X.reshape(nbEpoch, nbChannels*nbSamples)
+        return [self.processVector(v, nbChannels, nbSamples) for v in vectors]
+      except Exception as e:
+        self.log("[Error] Epochs are already vectors: ", e)
+        return [self.processVector(v, nbChannels, nbSamples) for v in X]
+
 
     def dump_casebase(self, X):
       with open(casebase, "w") as f:
@@ -64,13 +75,14 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             f.write("".join(str(e)+"\n" for e in y))
 
     def fit(self, X, y=None):
+        self.classes_ = np.unique(y)
         self.log("Fitting", X.shape)
         # Check parameters
         try:
-            self.log("Loading parameter file ", self.params_file)
+            self.log("Loading parameter file", self.params_file)
             self.params = json.load(open(self.params_file))
         except Exception as e:
-            self.log("Could not load parameter file...", e)
+            self.log("[Error] Could not load parameter file...", e)
             return None
 
         # Modifying configuration
@@ -85,34 +97,37 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             with open(self.local_training_param_file, 'w') as f:
                 f.write(json.dumps(self.params, indent=4))
         except Exception as e:
-            self.log("Could not modify and save the parameter file: ", e)
+            self.log("[Error] Could not modify and save the parameter file: ", e)
             return None
 
         # Build the model and output the files
         try:
-            self.log("Building model and serializing..")
+            self.log("Building model and serializing...")
             self.dump_casebase(X)
             self.dump_outcomes(y)
             cmd = [self.HCBR_BIN, '--params', self.local_training_param_file]
             p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
             output, err = p.communicate()
             self.log("output = ", output, level=2)
-            self.log("error = ", error, level=2)
+            self.log("error = ", err, level=2)
         except Exception as e:
-            self.log("Could not build the model: ", e)
+            self.log("[Error] Could not build the model: ", e)
             return None
 
         return self
 
     def index_of(self, x):
-      el = min(self.X, key=lambda e:abs(np.trace(e)-np.trace(x)))
+      try:
+        el = min(self.X, key=lambda e:distance(e, x, "riemann"))
+      except Exception as e:
+        el = min(self.X, key=lambda e:abs(np.sum(e) - np.sum(x)))
       for i in range(len(self.X)):
         if equals(self.X[i], el):
           return i
       return -1
 
     def labels_of(self, X):
-      self.log("Getting Xs with closest traces")
+      self.log("Getting Xs with closest 'riemann' distance")
       indexes = [self.index_of(x) for x in X]
       iLen = len(indexes)
       iUniqueLen = len(np.unique(indexes))
@@ -139,7 +154,7 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             with open(self.local_training_param_file, 'w') as f:
                 f.write(json.dumps(self.params, indent=4))
         except Exception as e:
-            self.log("Could not modify and save the parameter file: ", e)
+            self.log("[Error] Could not modify and save the parameter file: ", e)
             return None
 
         # Build the model and output the files
@@ -155,12 +170,24 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             output = open('predictions.txt', 'r').read().strip()
             res = [int(o.split()[2]) for o in output.splitlines()[1:]]
         except Exception as e:
-            self.log("Could not make prediction: ", e)
+            self.log("[Error] Could not make prediction: ", e)
             return None
         return res
+
+    def predict_proba(self, X, y=None):
+      self.log("[WARNING] Prediction probabilities are not available. Results from predict will be used instead.")
+      predicted_labels = self.predict(X, y)
+      ret = [np.array([c == 0, c == 1]) for c in predicted_labels]
+      return np.array(ret)
 
     def score(self, X, y=None):
         self.log("Scoring")
         pred = self.predict(X, y)
-        return balanced_accuracy_score(y, pred)
+        ba = balanced_accuracy_score(y, pred)
+        f1 = f1_score(y, pred)
+        m = matthews_corrcoef(y, pred)
+        self.log("balanced accuracy = ", ba)
+        self.log("f1 = ", f1)
+        self.log("matthews_corrcoef = ", m)
+        return ba
 
