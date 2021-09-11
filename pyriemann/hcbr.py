@@ -5,6 +5,7 @@ from subprocess import Popen, PIPE
 from .utils.distance import distance
 import numpy as np
 import os
+import glob
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import accuracy_score, matthews_corrcoef, balanced_accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold, RepeatedKFold
@@ -14,8 +15,9 @@ this_directory = os.path.dirname(os.path.abspath(__file__))
 
 HCBR_BIN = this_directory + '\\HCBR.exe'
 
-casebase = this_directory + '\\casebase.txt'
-outcomes = this_directory  + '\\outcomes.txt'
+hcbr_features = "hcbr_features"
+casebase = this_directory + '\\' + hcbr_features + '\\training_set_cases.txt'
+outcomes = this_directory  + '\\' + hcbr_features + '\\training_set_outcomes.txt'
 
 def equals(x1, x2):
   for i1, i2 in zip(x1, x2):
@@ -55,11 +57,11 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         return [self.processVector(v, nbChannels, nbSamples) for v in vectors]
       except Exception as e:
         self.log("[Error] Epochs are already vectors: ", e)
-        return [self.processVector(v, nbChannels, nbSamples) for v in X]
+        return [self.processVector(v, nbChannels, 1) for v in X]
 
 
-    def dump_casebase(self, X):
-      with open(casebase, "w") as f:
+    def dump_casebase(self, X, append=False):
+      with open(casebase, "a" if append else "w") as f:
         vectors = self.vectorize(X)
         self.log("size of vector is", len(vectors[0]))
         f.write(" ".join(str(e) for e in vectors[0]))
@@ -68,14 +70,17 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
           f.write(" ".join(str(e) for e in v))
           f.write("\n")
 
-    def dump_outcomes(self, y):
-      with open(outcomes, "w") as f:
+    def dump_outcomes(self, y, append=False):
+      with open(outcomes, "a" if append else "w") as f:
           if y is not None:
             f.write(str(y[0])+"\n")
             f.write("".join(str(e)+"\n" for e in y))
 
     def fit(self, X, y=None):
+        self.nb_fit = len(X)
         self.classes_ = np.unique(y)
+        for f in glob.glob(hcbr_features + "\\" + "*"):
+            os.remove(f)
         self.log("Fitting", X.shape)
         # Check parameters
         try:
@@ -88,12 +93,14 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         # Modifying configuration
         try:
             self.log("Auto-config parameter file...")
+            self.params["input"]["features"] = this_directory + "\\" + hcbr_features + "\\"
             self.params["input"]["casebase"] = casebase
             self.params["input"]["outcomes"] = outcomes
             self.params['serialization']['serialize'] = True
+            self.params['serialization']['path'] = this_directory + "\\" + hcbr_features + "\\"
             self.params['parameters']['no_prediction'] = True
             self.params['deserialization']['deserialize'] = False
-            self.params['parameters']['limit'] = len(X) 
+            self.params['parameters']['limit'] = len(X)
             with open(self.local_training_param_file, 'w') as f:
                 f.write(json.dumps(self.params, indent=4))
         except Exception as e:
@@ -110,6 +117,19 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
             output, err = p.communicate()
             self.log("output = ", output, level=2)
             self.log("error = ", err, level=2)
+            
+            confusionMatrice = err.decode("utf-8").split('Ratio error')[-1].split("\r\n")
+            firstLine = confusionMatrice[2].split("- ")
+            secondLine = confusionMatrice[4].split("- ")
+            TN = int(firstLine[1].strip())
+            FP = int(firstLine[2].strip())
+            FN = int(secondLine[1].strip())
+            TP = int(secondLine[2].strip())
+            sensitivity = TP / (TP + FN)
+            specificity = TN / (FP + TN)
+            ba = (sensitivity + specificity) / 2
+            self.log("Balanced accuracy of training = ", ba)
+
         except Exception as e:
             self.log("[Error] Could not build the model: ", e)
             return None
@@ -143,12 +163,15 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         # Modifying configuration
         try:
             self.log("Auto-config parameter file...")
+            self.params["input"]["features"] = this_directory + "\\" + hcbr_features + "\\"
             self.params["input"]["casebase"] = casebase
             self.params["input"]["outcomes"] = outcomes
+            self.params["input"]["limit"] = self.nb_fit
             self.params['serialization']['serialize'] = False
             self.params['parameters']['no_prediction'] = False
+            self.params['deserialization']['path'] = this_directory + "\\" + hcbr_features + "\\"
             self.params['deserialization']['deserialize'] = True
-            self.params['parameters']['limit'] = 0
+            # self.params['parameters']['limit'] = 615
             self.params['parameters']['keep_offset'] = False
             self.params['parameters']['training_iterations'] = 0
             with open(self.local_training_param_file, 'w') as f:
@@ -160,8 +183,8 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         # Build the model and output the files
         res = []
         try:
-            self.dump_casebase(X)
-            self.dump_outcomes(y)
+            self.dump_casebase(X, append=True)
+            self.dump_outcomes(y, append=True)
             cmd = [self.HCBR_BIN, '--params', self.local_training_param_file]
             p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
             output, err = p.communicate()
@@ -172,7 +195,9 @@ class HCBRClassifier(BaseEstimator, ClassifierMixin):
         except Exception as e:
             self.log("[Error] Could not make prediction: ", e)
             return None
-        return res
+        # self.log(res)
+        self.log("Predicting balanced accuracy = ", balanced_accuracy_score(y, res[-len(X):]))
+        return res[-len(X):]
 
     def predict_proba(self, X, y=None):
       self.log("[WARNING] Prediction probabilities are not available. Results from predict will be used instead.")
