@@ -1,13 +1,15 @@
 """Spatial filtering function."""
 import numpy
 
-from scipy.linalg import eigh
+from scipy.linalg import eigh, eig
 from sklearn.base import BaseEstimator, TransformerMixin
 
+from .utils.utils import matldiv, matrdiv
 from .utils.covariance import _check_est
 from .utils.mean import mean_covariance
 from .utils.ajd import ajd_pham
 from .utils.mean import _check_mean_method
+from scipy.linalg import sqrtm
 
 
 class Xdawn(BaseEstimator, TransformerMixin):
@@ -462,3 +464,81 @@ class SPoC(CSP):
         self.patterns_ = A[:, 0:self.nfilter].T
 
         return self
+
+class SimplifiedSTCP (BaseEstimator, TransformerMixin):
+  """Implementation of a simplified STCP with epochs of signal as input.
+
+  This is a simplified implementation of the STCP [1] modified by Dr. Florent Bouchard, 
+  and used in [2]. It consist in selecting the components which maximize
+  the signal-to-noise ratio.
+
+  Parameters
+  ----------
+  target : typeof label
+        the label of the target class
+  nComponents : int (default 4)
+        The number of sensors to keep. 
+  metric : str (default "euclid")
+        The metric for the estimation of mean covariance matrices
+
+  References
+  ----------
+  [1] M. Congedo, L. Korczowski, A. Delorme, and F. Lopes Da Silva,
+      ‘Spatio-temporal common pattern: A companion method for ERP analysis in the time domain’,
+      J. Neurosci. Methods, vol. 267, pp. 74–88, 2016. 
+  [2] G. H. Cattan, A. Andreev, C. Mendoza, and M. Congedo,
+      ‘A Comparison of Mobile VR Display Running on an Ordinary Smartphone
+       With Standard PC Display for P300-BCI Stimulus Presentation’,
+      IEEE Transactions on Games, vol. 13, no. 1, pp. 68–77
+      doi: 10.1109/TG.2019.2957963.
+
+  """
+  def __init__(self, target, nbComponents=4, metric='euclid'):
+    self.target = target
+    self.nbComponents = nbComponents
+    self.metric = metric
+    self.B = None
+
+  def fit(self, X, y):
+    """Train spatial filters.
+
+    Parameters
+    ----------
+    X : ndarray, shape (n_trials, n_channels, n_sample)
+          ndarray of epochs.
+    y : ndarray shape (n_trials, 1)
+          target variable corresponding to each trial.
+
+    Returns
+    -------
+    self : SimplifiedSTCP instance
+        The SimplifiedSTCP instance.
+    """
+    # Compute the root of mean covariance epochs
+    covEpochs = numpy.array([numpy.array(numpy.cov(epoch)) for epoch in X])
+    meanCovEpochs = mean_covariance(covEpochs, self.metric)
+    sqrtOfMeanCovEpochs = sqrtm(meanCovEpochs)
+	
+    # Compute the covariance of mean target epochs
+    meanTargetEpochs = X[y == self.target].mean(axis=0)
+    covOfMeanTargetEpochs = numpy.cov(meanTargetEpochs)
+    
+    # Compute signal-to-noise matrix
+    signalToNoise = matrdiv(matldiv(sqrtOfMeanCovEpochs, covOfMeanTargetEpochs), sqrtOfMeanCovEpochs)
+    
+    # Compute the eigen decomposition of the signal-to-noise matrix
+    eigenValues, eigenVectors = eig(signalToNoise)
+
+    # sort eigen vector based on eigen values
+    idx = eigenValues.argsort()[::-1]   
+    eigenValues = eigenValues[idx]
+    eigenVectors = numpy.dot(numpy.transpose(eigenVectors), sqrtOfMeanCovEpochs)[:,idx]
+
+    # select the `nbComponents` eigen vectors having the higest eigen values
+    self.B = numpy.array(eigenVectors[:,0:self.nbComponents])
+
+    return self
+
+  def transform(self, X):
+    # B' * X
+    return numpy.array(numpy.array([numpy.dot(self.B.T, x) for x in X]))

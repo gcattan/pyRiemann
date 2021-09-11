@@ -1,3 +1,5 @@
+import numpy
+
 def check_version(library, min_version):
     """Check minimum library version required
 
@@ -27,3 +29,9 @@ def check_version(library, min_version):
         if this_version < min_version:
             ok = False
     return ok
+
+def matldiv(A, B):
+	return numpy.linalg.lstsq(A,B)[0]
+
+def matrdiv(A, B):
+	return numpy.transpose(matldiv(numpy.transpose(B), numpy.transpose(A)))
