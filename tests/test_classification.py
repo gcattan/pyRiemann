@@ -191,6 +191,6 @@ def test_TSclassifier_classifier(get_covmats, get_labels):
 
 
 def test_TSclassifier_classifier_error():
-    """Test TS if not Classifier"""
+    """Test TS if not Classifiers"""
     with pytest.raises(TypeError):
         TSclassifier(clf=Covariances())
