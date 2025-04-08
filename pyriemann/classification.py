@@ -1162,7 +1162,7 @@ def _get_within(X, y, means, classes, exponent, metric):
         sigmas.append(np.mean(dists_within))
     sum_sigmas = np.sum(sigmas)
     return sum_sigmas
-
+ 
 #temporal: imports MeanField_V2
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from .utils.mean import mean_logeuclid
