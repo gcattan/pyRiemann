@@ -938,7 +938,11 @@ class TLEstimator(BaseEstimator):
                 sample_weight[step_name + "__sample_weight"] = weights
             self.estimator.fit(X_dec, y_dec, **sample_weight)
         else:
-            self.estimator.fit(X_dec, y_dec, sample_weight=weights)
+            sig = inspect.signature(self.estimator.fit).parameters
+            if "sample_weight" in sig:
+                self.estimator.fit(X_dec, y_dec, sample_weight=weights)
+            else:
+                self.estimator.fit(X_dec, y_dec)
 
         self._is_fitted = True
         return self
