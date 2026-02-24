@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .base import expm, invsqrtm, logm, sqrtm, ddexpm, ddlogm
+from .base import ctranspose, expm, invsqrtm, logm, sqrtm, ddexpm, ddlogm
 from .utils import check_function
 
 
@@ -90,7 +90,7 @@ def exp_map_logchol(X, Cref):
     exp_map[..., diag0, diag1] = np.exp(diff_bracket[..., diag0, diag1]) \
         * Cref_chol[..., diag0, diag1]
 
-    return exp_map @ exp_map.conj().swapaxes(-1, -2)
+    return exp_map @ ctranspose(exp_map)
 
 
 def exp_map_logeuclid(X, Cref):
@@ -105,9 +105,9 @@ def exp_map_logeuclid(X, Cref):
         \mathbf{X}_\text{original} = \exp \left( \log(\mathbf{C}_\text{ref})
         + [D_{\mathbf{C}_\text{ref}} \log] \left(\mathbf{X}\right) \right)
 
-    where :math:`[D_{\mathbf{C}_\text{ref}} \log] \left( \mathbf{X}\right)`
+    where :math:`[D_{\mathbf{A}} \log] \left( \mathbf{B}\right)`
     indicates the differential of the matrix logarithm at point
-    :math:`\mathbf{C}_\text{ref}` applied to :math:`\mathbf{X}`.
+    :math:`\mathbf{A}` applied to :math:`\mathbf{B}`.
     Calculation is performed according to Eq. (5) in [2]_.
 
     Parameters
@@ -145,15 +145,15 @@ def exp_map_riemann(X, Cref, Cm12=False):
     r"""Project matrices back to manifold by Riemannian exponential map.
 
     The projection of a matrix :math:`\mathbf{X}` from tangent space
-    to SPD/HPD manifold with Riemannian exponential map
+    to SPD/HPD manifold with affine-invariant Riemannian exponential map
     according to a reference SPD/HPD matrix :math:`\mathbf{C}_\text{ref}` is:
 
     .. math::
         \mathbf{X}_\text{original} = \mathbf{C}_\text{ref}^{1/2}
         \exp(\mathbf{X}) \mathbf{C}_\text{ref}^{1/2}
 
-    When Cm12=True, it returns the full Riemannian exponential map as in
-    Section 3.4 of [1]_:
+    When Cm12=True, it returns the full affine-invariant Riemannian exponential
+    map as in Section 3.4 of [1]_:
 
     .. math::
         \mathbf{X}_\text{original} = \mathbf{C}_\text{ref}^{1/2}
@@ -222,7 +222,6 @@ def exp_map_wasserstein(X, Cref):
         L. Malagò, L. Montrucchio, G. Pistone. Information Geometry, 2018, 1,
         pp. 137–179.
     """
-
     d, V = np.linalg.eigh(Cref)
     C = 1 / (d[:, None] + d[None, :])
 
@@ -261,6 +260,10 @@ def exp_map(X, Cref, *, metric="riemann"):
     -------
     X_original : ndarray, shape (..., n, n)
         Matrices in manifold.
+
+    Notes
+    -----
+    .. versionadded:: 0.9
 
     See Also
     --------
@@ -310,7 +313,7 @@ def log_map_logchol(X, Cref):
     r"""Project matrices in tangent space by log-Cholesky logarithmic map.
 
     The projection of a matrix :math:`\mathbf{X}` from SPD/HPD manifold
-    to tangent space by log-Cholesky logarithmic map, see [1]_ Table 2.
+    to tangent space by log-Cholesky logarithmic map, see Table 2 of [1]_ .
 
     Parameters
     ----------
@@ -335,8 +338,7 @@ def log_map_logchol(X, Cref):
         <https://arxiv.org/pdf/1908.09326>`_
         Z. Lin. SIAM J Matrix Anal Appl, 2019, 40(4), pp. 1353-1370.
     """
-    X_chol = np.linalg.cholesky(X)
-    Cref_chol = np.linalg.cholesky(Cref)
+    X_chol, Cref_chol = np.linalg.cholesky(X), np.linalg.cholesky(Cref)
 
     res = np.zeros_like(X)
 
@@ -347,8 +349,7 @@ def log_map_logchol(X, Cref):
     res[..., diag0, diag1] = Cref_chol[..., diag0, diag1] * \
         np.log(X_chol[..., diag0, diag1] / Cref_chol[..., diag0, diag1])
 
-    X_new = Cref_chol @ res.conj().swapaxes(-1, -2) + \
-        res @ Cref_chol.conj().swapaxes(-1, -2)
+    X_new = Cref_chol @ ctranspose(res) + res @ Cref_chol.conj().T
 
     return X_new
 
@@ -365,9 +366,9 @@ def log_map_logeuclid(X, Cref):
         \mathbf{X}_\text{new} = [D_{\log(\mathbf{C}_\text{ref})} \exp] \left(
         \log(\mathbf{X}) - \log(\mathbf{C}_\text{ref}) \right)
 
-    where :math:`[D_{\log(\mathbf{C}_\text{ref})} \exp]\left(\mathbf{X}\right)`
+    where :math:`[D_{\mathbf{A}} \exp]\left(\mathbf{B}\right)`
     indicates the differential of the matrix exponential at point
-    :math:`\log(\mathbf{C}_\text{ref})` applied to :math:`\mathbf{X}`.
+    :math:`\mathbf{A}` applied to :math:`\mathbf{B}`.
     Calculation is performed according to Eq. (7) in [2]_.
 
     Parameters
@@ -400,22 +401,23 @@ def log_map_logeuclid(X, Cref):
     """
     _check_dimensions(X, Cref)
     logCref = logm(Cref)
-    return ddexpm(logm(X) - logCref, logCref)
+    X_new = ddexpm(logm(X) - logCref, logCref)
+    return X_new
 
 
 def log_map_riemann(X, Cref, C12=False):
     r"""Project matrices in tangent space by Riemannian logarithmic map.
 
     The projection of a matrix :math:`\mathbf{X}` from SPD/HPD manifold
-    to tangent space by Riemannian logarithmic map
+    to tangent space by affine-invariant Riemannian logarithmic map
     according to a SPD/HPD reference matrix :math:`\mathbf{C}_\text{ref}` is:
 
     .. math::
         \mathbf{X}_\text{new} = \log ( \mathbf{C}_\text{ref}^{-1/2}
         \mathbf{X} \mathbf{C}_\text{ref}^{-1/2})
 
-    When C12=True, it returns the full Riemannian logarithmic map as in
-    Section 3.4 of [1]_:
+    When C12=True, it returns the full affine-invariant Riemannian logarithmic
+    map as in Section 3.4 of [1]_:
 
     .. math::
         \mathbf{X}_\text{new} = \mathbf{C}_\text{ref}^{1/2}
@@ -495,7 +497,7 @@ def log_map_wasserstein(X, Cref):
     P12inv = invsqrtm(Cref)
     sqrt_bracket = sqrtm(P12 @ X @ P12)
     tmp = P12inv @ sqrt_bracket @ P12
-    return tmp + tmp.conj().swapaxes(-2, -1) - 2 * Cref
+    return tmp + ctranspose(tmp) - 2 * Cref
 
 
 log_map_functions = {
@@ -525,6 +527,10 @@ def log_map(X, Cref, *, metric="riemann"):
     -------
     X_new : ndarray, shape (..., n, n)
         Matrices projected in tangent space.
+
+    Notes
+    -----
+    .. versionadded:: 0.9
 
     See Also
     --------
@@ -680,27 +686,51 @@ def untangent_space(T, Cref, *, metric="riemann"):
 
 ###############################################################################
 
-# NOT IN API
-def transport(X, A, B):
-    r"""Parallel transport of matrices in tangent space.
+
+def transport_euclid(X, A=None, B=None):
+    """Parallel transport for Euclidean metric.
+
+    Parameters
+    ----------
+    X : ndarray, shape (..., n, m)
+        Matrices.
+    A : None | ndarray, shape (n, m), default=None
+        Initial matrix, unused.
+    B : None | ndarray, shape (n, m), default=None
+        Final matrix, unused.
+
+    Returns
+    -------
+    X_new : ndarray, shape (..., n, m)
+        Matrices, equal to X.
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+
+    See Also
+    --------
+    transport
+    """
+    return X
+
+
+def transport_logchol(X, A, B):
+    r"""Parallel transport for log-Cholesky metric.
 
     The parallel transport of matrices :math:`\mathbf{X}` in tangent space
     from an initial SPD/HPD matrix :math:`\mathbf{A}` to a final SPD/HPD
-    matrix :math:`\mathbf{B}` according to the Levi-Civita connection along
-    the geodesic under the affine-invariant metric is [1]_:
+    matrix :math:`\mathbf{B}` for log-Cholesky metric is given in Proposition 7
+    of [1]_.
 
-    .. math::
-        \mathbf{X}_\text{new} = \mathbf{E} \mathbf{X} \mathbf{E}^H
-
-    where :math:`\mathbf{E} = (\mathbf{B} \mathbf{A}^{-1})^{1/2}`.
-
-    Warning: this function must be applied to matrices already projected in
-    tangent space with a logarithmic map, not to SPD/HPD matrices in manifold.
+    Warning: this function must be applied to matrices :math:`\mathbf{X}`
+    already projected in tangent space with a logarithmic map at
+    :math:`\mathbf{A}`, not to SPD/HPD matrices in manifold.
 
     Parameters
     ----------
     X : ndarray, shape (..., n, n)
-        Symmetric/Hermitian matrices in tangent space.
+        Symmetric/Hermitian matrices in tangent space at A.
     A : ndarray, shape (n, n)
         Initial SPD/HPD matrix.
     B : ndarray, shape (n, n)
@@ -709,23 +739,202 @@ def transport(X, A, B):
     Returns
     -------
     X_new : ndarray, shape (..., n, n)
-        Transported matrices in tangent space.
+        Matrices in tangent space transported from A to B.
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+    .. versionchanged:: 0.11
+        Correct formula for HPD matrices.
+
+    See Also
+    --------
+    transport
+
+    References
+    ----------
+    .. [1] `Riemannian geometry of symmetric positive definite matrices via
+        Cholesky decomposition
+        <https://arxiv.org/pdf/1908.09326>`_
+        Z. Lin. SIAM J Matrix Anal Appl, 2019, 40(4), pp. 1353-1370.
+    """
+    A_chol, B_chol = np.linalg.cholesky(A), np.linalg.cholesky(B)
+    A_invchol = np.linalg.inv(A_chol)
+
+    tri0, tri1 = np.tril_indices(X.shape[-1], -1)
+    diag0, diag1 = np.diag_indices(X.shape[-1])
+
+    P = A_invchol @ X @ A_invchol.conj().T
+    P12 = np.zeros_like(P)
+    P12[..., tri0, tri1] = P[..., tri0, tri1]
+    P12[..., diag0, diag1] = P[..., diag0, diag1] / 2
+    X_ = A_chol @ P12
+
+    T = np.zeros_like(X)
+    T[..., tri0, tri1] = X_[..., tri0, tri1]
+    T[..., diag0, diag1] = B_chol[..., diag0, diag1] \
+        / A_chol[..., diag0, diag1] * X_[..., diag0, diag1]
+
+    X_new = B_chol @ ctranspose(T) + T @ B_chol.conj().T
+    return X_new
+
+
+def transport_logeuclid(X, A, B):
+    r"""Parallel transport for log-Euclidean metric.
+
+    The parallel transport of matrices :math:`\mathbf{X}` in tangent space
+    from an initial SPD/HPD matrix :math:`\mathbf{A}` to a final SPD/HPD
+    matrix :math:`\mathbf{B}` for log-Euclidean metric is given in Table 4 of
+    [1]_:
+
+    .. math::
+        \mathbf{X}_\text{new} = [D_{\log \mathbf{B}} \exp] \left(
+        [D_{\mathbf{A}} \log]\left(\mathbf{X}\right)
+        \right)
+
+    Warning: this function must be applied to matrices :math:`\mathbf{X}`
+    already projected in tangent space with a logarithmic map at
+    :math:`\mathbf{A}`, not to SPD/HPD matrices in manifold.
+
+    Parameters
+    ----------
+    X : ndarray, shape (..., n, n)
+        Symmetric/Hermitian matrices in tangent space at A.
+    A : ndarray, shape (n, n)
+        Initial SPD/HPD matrix.
+    B : ndarray, shape (n, n)
+        Final SPD/HPD matrix.
+
+    Returns
+    -------
+    X_new : ndarray, shape (..., n, n)
+        Matrices in tangent space transported from A to B.
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+    .. versionchanged:: 0.11
+        Correct formula.
+
+    See Also
+    --------
+    transport
+
+    References
+    ----------
+    .. [1] `O(n)-invariant Riemannian metrics on SPD matrices
+        <https://www.sciencedirect.com/science/article/pii/S0024379522004360>`_
+        Y. Thanwerdas & X. Pennec. Linear Algebra and its Applications, 2023.
+    """
+    return ddexpm(ddlogm(X, A), logm(B))
+
+
+def transport_riemann(X, A, B):
+    r"""Parallel transport for affine-invariant Riemannian metric.
+
+    The parallel transport of matrices :math:`\mathbf{X}` in tangent space
+    from an initial SPD/HPD matrix :math:`\mathbf{A}` to a final SPD/HPD
+    matrix :math:`\mathbf{B}` according to the Levi-Civita connection along
+    the geodesic under the affine-invariant Riemannian metric is given by
+    Eq.(3.4) of [1]_:
+
+    .. math::
+        \mathbf{X}_\text{new} = \mathbf{E} \mathbf{X} \mathbf{E}^H
+
+    where :math:`\mathbf{E} = (\mathbf{B} \mathbf{A}^{-1})^{1/2}`.
+
+    Warning: this function must be applied to matrices :math:`\mathbf{X}`
+    already projected in tangent space with a logarithmic map at
+    :math:`\mathbf{A}`, not to SPD/HPD matrices in manifold.
+
+    Parameters
+    ----------
+    X : ndarray, shape (..., n, n)
+        Symmetric/Hermitian matrices in tangent space at A.
+    A : ndarray, shape (n, n)
+        Initial SPD/HPD matrix.
+    B : ndarray, shape (n, n)
+        Final SPD/HPD matrix.
+
+    Returns
+    -------
+    X_new : ndarray, shape (..., n, n)
+        Matrices in tangent space transported from A to B.
 
     Notes
     -----
     .. versionchanged:: 0.8
-        Change input arguments.
+        Change input arguments and calculation of the function.
+    .. versionchanged:: 0.10
+        Rename function and add to API.
+
+    See Also
+    --------
+    transport
 
     References
     ----------
     .. [1] `Conic geometric optimisation on the manifold of positive definite
         matrices
-        <https://arxiv.org/pdf/1312.1039>`_
+        <https://optml.mit.edu/papers/sra_hosseini_gopt.pdf>`_
         S. Sra and R. Hosseini. SIAM Journal on Optimization, 2015.
     """
-    # (BA^{-1})^{1/2} = A^{1/2}(A^{-1/2}BA^{-1/2})^{1/2}A^{-1/2}
-    A12inv = invsqrtm(A)
-    A12 = sqrtm(A)
+    # BA^{-1} is not sym => use sqrtm from scipy
+    # E = scipy.linalg.sqrtm(B @ np.linalg.inv(A))
+    # (BA^{-1})^{1/2} = A^{1/2} (A^{-1/2}BA^{-1/2})^{1/2} A^{-1/2}
+    A12, A12inv = sqrtm(A), invsqrtm(A)
     E = A12 @ sqrtm(A12inv @ B @ A12inv) @ A12inv
     X_new = E @ X @ E.conj().T
     return X_new
+
+
+transport_functions = {
+    "euclid": transport_euclid,
+    "logchol": transport_logchol,
+    "logeuclid": transport_logeuclid,
+    "riemann": transport_riemann,
+}
+
+
+def transport(X, A, B, metric="riemann"):
+    r"""Parallel transport according to a specified metric.
+
+    Parallel transport of matrices :math:`\mathbf{X}` in tangent space
+    from an initial SPD/HPD matrix :math:`\mathbf{A}` to a final SPD/HPD
+    matrix :math:`\mathbf{B}`, according to a metric.
+
+    Warning: this function must be applied to matrices :math:`\mathbf{X}`
+    already projected in tangent space with a logarithmic map at
+    :math:`\mathbf{A}`, not to SPD/HPD matrices in manifold.
+
+    Parameters
+    ----------
+    X : ndarray, shape (..., n, n)
+        Matrices in tangent space at A.
+    A : ndarray, shape (n, n)
+        Initial SPD/HPD matrix.
+    B : ndarray, shape (n, n)
+        Final SPD/HPD matrix.
+    metric : string | callable, default="riemann"
+        Metric used for parallel transport, can be:
+        "euclid", "logchol", "logeuclid", "riemann",
+        or a callable function.
+
+    Returns
+    -------
+    X_new : ndarray, shape (..., n, n)
+        Matrices in tangent space transported from A to B.
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+
+    See Also
+    --------
+    transport_euclid
+    transport_logchol
+    transport_logeuclid
+    transport_riemann
+    """
+    transport_function = check_function(metric, transport_functions)
+    return transport_function(X, A, B)

@@ -14,13 +14,13 @@ for the classification of fNIRS data [1]_. The ``HybridBlocks`` estimator
 builds upon this strength by allowing for even finer control and tuning of
 block-specific properties, which may further enhance classification accuracy.
 We can then apply shrinkage independently to each block for
-optimal performance [1]_.
+optimal performance [1]_. Proof-of-principle work also shows sensitive and
+specific fNIRS-based awareness detection using related methodology [2]_.
 """
 
 # Author: Tim Näher
 
 import os
-from pathlib import Path
 from urllib.request import urlretrieve
 
 import matplotlib.pyplot as plt
@@ -28,10 +28,9 @@ import numpy as np
 import pandas as pd
 from scipy.linalg import block_diag
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.model_selection import StratifiedKFold
 from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.pipeline import Pipeline, make_pipeline
-from sklearn.model_selection import cross_val_score
 
 from pyriemann.classification import SVC
 from pyriemann.estimation import (
@@ -41,7 +40,9 @@ from pyriemann.estimation import (
     Shrinkage,
     ker_est_functions,
 )
+from pyriemann.utils._data import get_data_path
 from pyriemann.utils.covariance import cov_est_functions
+from pyriemann.utils._logging import logger
 
 
 ###############################################################################
@@ -319,32 +320,39 @@ class HybridBlocks(TransformerMixin, BaseEstimator):
         return pd.DataFrame(data_dict)
 
 
+def download_fnirs(data_path=None):
+    """Download the dataset.
+
+    Parameters
+    ----------
+    data_path : str | None, default=None
+        Path to the destination folder for data download.
+        If None, defaults to ``get_data_path("fnirs")``.
+    """
+    if data_path is None:
+        data_path = get_data_path("fnirs")
+    filenames = ["X", "y"]
+
+    if not os.path.exists(data_path):
+        os.makedirs(data_path, exist_ok=True)
+    logger.info("\n")
+    for filename in filenames:
+        src = f"https://zenodo.org/records/13841869/files/{filename}.npy"
+        dst = os.path.join(data_path, f"{filename}.npy")
+        if not os.path.exists(dst):
+            msg = f"Downloading file '{filename}' from '{src}' to '{dst}'."
+            logger.info(msg)
+            urlretrieve(src, dst)
+
+
 ###############################################################################
 # Download example data and plot
 # ------------------------------
 
-X_url = "https://zenodo.org/records/13841869/files/X.npy"
-y_url = "https://zenodo.org/records/13841869/files/y.npy"
-
-data_path = Path("./data")
-data_path.mkdir(exist_ok=True)
-X_path, y_path = data_path / "X.npy", data_path / "y.npy"
-
-
-# Function to download the files if they don't already exist
-def download_file(url, file_path):
-    if not os.path.isfile(file_path):
-        print(f"Downloading {file_path} from {url}")
-        urlretrieve(url, file_path)
-        print(f"Downloaded {file_path}")
-
-
-# Download
-download_file(X_url, X_path)
-download_file(y_url, y_path)
-
-# Load the dataset
-X, y = np.load(X_path), np.load(y_path)
+download_fnirs()
+data_path = get_data_path("fnirs")
+X = np.load(os.path.join(data_path, "X.npy"))
+y = np.load(os.path.join(data_path, "y.npy"))
 
 print(
     f"Data loaded: {X.shape[0]} trials, {X.shape[1]} channels, "
@@ -456,6 +464,16 @@ plt.show()
 ###############################################################################
 # References
 # ----------
-# .. [1] `Riemannian Geometry for the classification of brain states with fNIRS
-#    <https://www.biorxiv.org/content/10.1101/2024.09.06.611347v1>`_
-#    T. Näher, L. Bastian, A. Vorreuther, P. Fries, R. Goebel, B. Sorger.
+# .. [1] Näher T, Bastian L, Vorreuther A, Fries P, Goebel R, Sorger B.
+#        Riemannian geometry boosts functional near-infrared spectroscopy-based
+#        brain-state classification accuracy.
+#        Neurophotonics. 2025 Oct;12(4):045002.
+#        doi:10.1117/1.NPh.12.4.045002. Epub 2025 Oct 15.
+#        PMID: 41104354; PMCID: PMC12523035.
+# .. [2] Bastian L, Näher T, Vorreuther A, Lührs M, Benitez Andonegui A,
+#        Fries P, Riecke L, Sorger B.
+#        Sensitive and specific fNIRS-based approach for awareness detection
+#        in disorders of consciousness: proof of principle in healthy adults.
+#        Neurophotonics. 2025 Oct;12(4):045001.
+#        doi:10.1117/1.NPh.12.4.045001. Epub 2025 Oct 15.
+#        PMID: 41104355; PMCID: PMC12521986.

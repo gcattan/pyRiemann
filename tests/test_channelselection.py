@@ -10,11 +10,11 @@ def test_electrodeselection(use_label, use_weight,
                             get_mats, get_labels, get_weights):
     """Test ElectrodeSelection"""
     n_matrices, n_channels, n_classes = 10, 30, 2
-    mats = get_mats(n_matrices, n_channels, "spd")
+    X = get_mats(n_matrices, n_channels, "spd")
     if use_label:
-        labels = get_labels(n_matrices, n_classes)
+        y = get_labels(n_matrices, n_classes)
     else:
-        labels, n_classes = None, 1
+        y, n_classes = None, 1
     if use_weight:
         weights = get_weights(n_matrices)
     else:
@@ -23,18 +23,21 @@ def test_electrodeselection(use_label, use_weight,
     nelec = 16
     se = ElectrodeSelection(nelec=nelec)
 
-    se.fit(mats, labels, weights)
+    se.fit(X, y, weights)
     assert se.covmeans_.shape == (n_classes, n_channels, n_channels)
     assert isinstance(se.dist_, list)
     assert len(se.subelec_) == nelec
 
-    mats_tf = se.transform(mats)
-    assert mats_tf.shape == (n_matrices, nelec, nelec)
+    Xt = se.transform(X)
+    assert Xt.shape == (n_matrices, nelec, nelec)
+
+    Xt2 = se.fit_transform(X, y, weights)
+    assert_array_equal(Xt, Xt2)
 
 
-def test_flatchannelremover(rndstate):
-    n_matrices, n_channels, n_times = 10, 3, 100
-    X = rndstate.rand(n_times, n_matrices, n_channels)
+def test_flatchannelremover(get_mats):
+    n_matrices, n_channels, n_times = 10, 10, 3
+    X = get_mats(n_matrices, [n_channels, n_times], "real")
     X[:, 0, :] = 999
 
     fcr = FlatChannelRemover()
@@ -42,5 +45,10 @@ def test_flatchannelremover(rndstate):
     fcr.fit(X)
     assert_array_equal(fcr.channels_, range(1, 10))
 
-    Xt = fcr.fit_transform(X)
+    Xt = fcr.transform(X)
+    assert Xt.shape[0] == n_matrices
+    assert Xt.shape[2] == n_times
     assert_array_equal(Xt, X[:, 1:, :])
+
+    Xt2 = fcr.fit_transform(X)
+    assert_array_equal(Xt, Xt2)

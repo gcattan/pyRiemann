@@ -1,23 +1,23 @@
 """Means of SPD/HPD matrices."""
 
-from copy import deepcopy
 import warnings
 
 import numpy as np
 
+from . import deprecated
 from .ajd import ajd_pham
 from .base import sqrtm, invsqrtm, logm, expm, powm
 from .distance import distance_riemann
-from .geodesic import geodesic_riemann
+from .geodesic import geodesic_riemann, geodesic_thompson
 from .tangentspace import log_map_wasserstein, exp_map_wasserstein
 from .utils import check_weights, check_function, check_init
 
 
 def mean_ale(X, *, tol=10e-7, maxiter=50, sample_weight=None, init=None):
-    """AJD-based log-Euclidean (ALE) mean of SPD matrices.
+    """AJD-based log-Euclidean (ALE) mean of SPD/HPD matrices.
 
-    Return the mean of a set of SPD matrices using the approximate joint
-    diagonalization (AJD) based log-Euclidean (ALE) mean [1]_.
+    Approximate joint diagonalization (AJD) based log-Euclidean (ALE) mean of
+    SPD/HPD matrices [1]_.
 
     Parameters
     ----------
@@ -44,7 +44,7 @@ def mean_ale(X, *, tol=10e-7, maxiter=50, sample_weight=None, init=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -61,7 +61,6 @@ def mean_ale(X, *, tol=10e-7, maxiter=50, sample_weight=None, init=None):
         B = check_init(init, n)
 
     eye_n = np.eye(n)
-    crit = np.inf
     for _ in range(maxiter):
         J = np.einsum("a,abc->bc", sample_weight, logm(B @ X @ B.conj().T))
         delta = np.real(np.diag(expm(J)))
@@ -79,10 +78,10 @@ def mean_ale(X, *, tol=10e-7, maxiter=50, sample_weight=None, init=None):
     return M
 
 
-def mean_alm(X, *, tol=1e-14, maxiter=100, sample_weight=None):
+def mean_alm(X, *, tol=1e-14, maxiter=100, sample_weight=None, **kwargs):
     r"""Ando-Li-Mathias (ALM) mean of SPD/HPD matrices.
 
-    Return the geometric mean recursively [1]_, generalizing from:
+    Ando-Li-Mathias (ALM) mean is computed recursively, generalizing from [1]_:
 
     .. math::
         \mathbf{M} = X_1^{\frac{1}{2}} (X_1^{-\frac{1}{2}}X_2^{\frac{1}{2}}
@@ -95,7 +94,7 @@ def mean_alm(X, *, tol=1e-14, maxiter=100, sample_weight=None):
     ----------
     X : ndarray, shape (n_matrices, n, n)
         Set of SPD/HPD matrices.
-    tol : float, default=10e-14
+    tol : float, default=1e-14
         Tolerance to stop the gradient descent.
     maxiter : int, default=100
         Maximum number of iterations.
@@ -113,7 +112,7 @@ def mean_alm(X, *, tol=1e-14, maxiter=100, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -140,18 +139,60 @@ def mean_alm(X, *, tol=1e-14, maxiter=100, sample_weight=None):
             s = np.mod(np.arange(h, h + n_matrices - 1) + 1, n_matrices)
             M_iter[h] = mean_alm(M[s], sample_weight=sample_weight[s])
 
-        norm_iter = np.linalg.norm(M_iter[0] - M[0], 2)
-        norm_c = np.linalg.norm(M[0], 2)
+        norm_iter = np.linalg.norm(M_iter[0] - M[0], ord=2)
+        norm_c = np.linalg.norm(M[0], ord=2)
         if (norm_iter / norm_c) < tol:
             break
-        M = deepcopy(M_iter)
+        M = M_iter.copy()
     else:
         warnings.warn("Convergence not reached")
 
-    return M_iter.mean(axis=0)
+    return np.mean(M_iter, axis=0)
 
 
-def mean_euclid(X, sample_weight=None):
+def mean_chol(X, sample_weight=None, **kwargs):
+    r"""Mean of SPD/HPD matrices according to the Cholesky metric.
+
+    Cholesky mean :math:`\mathbf{M}` is
+    :math:`\mathbf{M} = \mathbf{L} \mathbf{L}^H`,
+    where :math:`\mathbf{L}` is computed as [1]_:
+
+    .. math::
+        \mathbf{L} = \sum_i w_i \text{chol}(\mathbf{X}_i)
+
+    Parameters
+    ----------
+    X : ndarray, shape (n_matrices, n, n)
+        Set of SPD/HPD matrices.
+    sample_weight : None | ndarray, shape (n_matrices,), default=None
+        Weights for each matrix. If None, it uses equal weights.
+
+    Returns
+    -------
+    M : ndarray, shape (n, n)
+        Cholesky mean.
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+
+    See Also
+    --------
+    gmean
+
+    References
+    ----------
+    .. [1] `Non-Euclidean statistics for covariance matrices, with applications
+        to diffusion tensor imaging
+        <https://doi.org/10.1214/09-AOAS249>`_
+        I.L. Dryden, A. Koloydenko, D. Zhou.
+        Ann Appl Stat, 2009, 3(3), pp. 1102-1123.
+    """
+    L = mean_euclid(np.linalg.cholesky(X), sample_weight=sample_weight)
+    return L @ L.conj().T
+
+
+def mean_euclid(X, sample_weight=None, **kwargs):
     r"""Mean of matrices according to the Euclidean metric.
 
     .. math::
@@ -173,12 +214,12 @@ def mean_euclid(X, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
     """
     return np.average(X, axis=0, weights=sample_weight)
 
 
-def mean_harmonic(X, sample_weight=None):
+def mean_harmonic(X, sample_weight=None, **kwargs):
     r"""Harmonic mean of invertible matrices.
 
     .. math::
@@ -198,40 +239,14 @@ def mean_harmonic(X, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
     """
     T = mean_euclid(np.linalg.inv(X), sample_weight=sample_weight)
     M = np.linalg.inv(T)
     return M
 
 
-def mean_identity(X, sample_weight=None):
-    r"""Identity matrix corresponding to the matrices dimension.
-
-    .. math::
-        \mathbf{M} = \mathbf{I}_n
-
-    Parameters
-    ----------
-    X : ndarray, shape (n_matrices, n, n)
-        Set of square matrices.
-    sample_weight : None
-        Not used, here for compatibility with other means.
-
-    Returns
-    -------
-    M : ndarray, shape (n, n)
-        Identity matrix.
-
-    See Also
-    --------
-    mean_covariance
-    """
-    M = np.eye(X.shape[-1])
-    return M
-
-
-def mean_kullback_sym(X, sample_weight=None):
+def mean_kullback_sym(X, sample_weight=None, **kwargs):
     """Mean of SPD/HPD matrices according to Kullback-Leibler divergence.
 
     Symmetrized Kullback-Leibler mean is the geometric mean between the
@@ -251,7 +266,7 @@ def mean_kullback_sym(X, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -267,12 +282,12 @@ def mean_kullback_sym(X, sample_weight=None):
     return M
 
 
-def mean_logchol(X, sample_weight=None):
+def mean_logchol(X, sample_weight=None, **kwargs):
     r"""Mean of SPD/HPD matrices according to the log-Cholesky metric.
 
     Log-Cholesky mean :math:`\mathbf{M}` is
     :math:`\mathbf{M} = \mathbf{L} \mathbf{L}^H`,
-    where :math:`\mathbf{L}` is computed as [1]_:
+    where :math:`\mathbf{L}` is computed as Eq(4.3) in [1]_:
 
     .. math::
         \mathbf{L} = \sum_i w_i \text{lower}(\text{chol}(\mathbf{X}_i)) +
@@ -297,7 +312,7 @@ def mean_logchol(X, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -310,23 +325,23 @@ def mean_logchol(X, sample_weight=None):
     sample_weight = check_weights(sample_weight, n_matrices)
 
     X_chol = np.linalg.cholesky(X)
-    mean = np.zeros(X.shape[-2:], dtype=X.dtype)
+    L = np.zeros(X.shape[-2:], dtype=X.dtype)
 
     tri0, tri1 = np.tril_indices(n_channels, -1)
-    mean[tri0, tri1] = np.average(
+    L[tri0, tri1] = np.average(
         X_chol[:, tri0, tri1],
         axis=0,
         weights=sample_weight,
     )
 
     diag0, diag1 = np.diag_indices(n_channels)
-    mean[diag0, diag1] = np.exp(np.average(
+    L[diag0, diag1] = np.exp(np.average(
         np.log(X_chol[:, diag0, diag1]),
         axis=0,
         weights=sample_weight,
     ))
 
-    return mean @ mean.conj().T
+    return L @ L.conj().T
 
 
 def mean_logdet(X, *, tol=10e-5, maxiter=50, init=None, sample_weight=None):
@@ -359,7 +374,7 @@ def mean_logdet(X, *, tol=10e-5, maxiter=50, init=None, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
     """
     n_matrices, n, _ = X.shape
     sample_weight = check_weights(sample_weight, n_matrices)
@@ -368,7 +383,6 @@ def mean_logdet(X, *, tol=10e-5, maxiter=50, init=None, sample_weight=None):
     else:
         M = check_init(init, n)
 
-    crit = np.finfo(np.float64).max
     for _ in range(maxiter):
         invX = np.linalg.inv(0.5 * X + 0.5 * M)
         J = np.einsum("a,abc->bc", sample_weight, invX)
@@ -384,7 +398,7 @@ def mean_logdet(X, *, tol=10e-5, maxiter=50, init=None, sample_weight=None):
     return M
 
 
-def mean_logeuclid(X, sample_weight=None):
+def mean_logeuclid(X, sample_weight=None, **kwargs):
     r"""Mean of SPD/HPD matrices according to the log-Euclidean metric.
 
     Log-Euclidean mean is [1]_:
@@ -406,7 +420,7 @@ def mean_logeuclid(X, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -460,7 +474,7 @@ def mean_power(X, p, *, sample_weight=None, zeta=10e-10, maxiter=100,
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -483,12 +497,12 @@ def mean_power(X, p, *, sample_weight=None, zeta=10e-10, maxiter=100,
         return mean_euclid(X, sample_weight=sample_weight)
     if p == 0:
         return mean_riemann(
-                X,
-                sample_weight=sample_weight,
-                init=init,
-                tol=zeta,
-                maxiter=maxiter,
-               )
+            X,
+            sample_weight=sample_weight,
+            init=init,
+            tol=zeta,
+            maxiter=maxiter,
+        )
     if p == -1:
         return mean_harmonic(X, sample_weight=sample_weight)
 
@@ -505,7 +519,6 @@ def mean_power(X, p, *, sample_weight=None, zeta=10e-10, maxiter=100,
         K = sqrtm(G)
 
     eye_n, sqrt_n = np.eye(n), np.sqrt(n)
-    crit = 10 * zeta
     for _ in range(maxiter):
         H = np.einsum(
             "a,abc->bc",
@@ -527,7 +540,7 @@ def mean_power(X, p, *, sample_weight=None, zeta=10e-10, maxiter=100,
     return M
 
 
-def mean_poweuclid(X, p, *, sample_weight=None):
+def mean_poweuclid(X, p, *, sample_weight=None, **kwargs):
     r"""Mean of SPD/HPD matrices according to the power Euclidean metric.
 
     Power Euclidean mean of order :math:`p` is [1]_:
@@ -551,7 +564,7 @@ def mean_poweuclid(X, p, *, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -565,9 +578,9 @@ def mean_poweuclid(X, p, *, sample_weight=None):
 
     if p == 1:
         return mean_euclid(X, sample_weight=sample_weight)
-    elif p == 0:
+    if p == 0:
         return mean_logeuclid(X, sample_weight=sample_weight)
-    elif p == -1:
+    if p == -1:
         return mean_harmonic(X, sample_weight=sample_weight)
 
     M = powm(mean_euclid(powm(X, p), sample_weight=sample_weight), 1/p)
@@ -579,12 +592,12 @@ def mean_riemann(X, *, tol=10e-9, maxiter=50, init=None, sample_weight=None):
 
     The affine-invariant Riemannian mean minimizes the sum of squared
     affine-invariant Riemannian distances :math:`d_R` to all SPD/HPD matrices
-    [1]_ [2]_:
+    [1]_:
 
     .. math::
          \arg \min_{\mathbf{M}} \sum_i w_i \ d_R (\mathbf{M}, \mathbf{X}_i)^2
 
-    For the convergence, the implemented stopping criterion comes from [3]_.
+    For the convergence, the implemented stopping criterion comes from [2]_.
 
     Parameters
     ----------
@@ -607,7 +620,7 @@ def mean_riemann(X, *, tol=10e-9, maxiter=50, init=None, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -616,11 +629,7 @@ def mean_riemann(X, *, tol=10e-9, maxiter=50, init=None, sample_weight=None):
         <https://ieeexplore.ieee.org/document/1318725>`_
         P.T. Fletcher, C. Lu, S. M. Pizer, S. Joshi.
         IEEE Trans Med Imaging, 2004, 23(8), pp. 995-1005
-    .. [2] `A differential geometric approach to the geometric mean of
-        symmetric positive-definite matrices
-        <https://epubs.siam.org/doi/10.1137/S0895479803436937>`_
-        M. Moakher. SIAM J Matrix Anal Appl, 2005, 26 (3), pp. 735-747
-    .. [3] `Approximate Joint Diagonalization and Geometric Mean of Symmetric
+    .. [2] `Approximate Joint Diagonalization and Geometric Mean of Symmetric
         Positive Definite Matrices
         <https://arxiv.org/abs/1505.07343>`_
         M. Congedo, B. Afsari, A. Barachant, M. Moakher. PLOS ONE, 2015
@@ -634,7 +643,6 @@ def mean_riemann(X, *, tol=10e-9, maxiter=50, init=None, sample_weight=None):
 
     nu = 1.0
     tau = np.finfo(np.float64).max
-    crit = np.finfo(np.float64).max
     for _ in range(maxiter):
         M12, Mm12 = sqrtm(M), invsqrtm(M)
         J = np.einsum("a,abc->bc", sample_weight, logm(Mm12 @ X @ Mm12))
@@ -648,6 +656,65 @@ def mean_riemann(X, *, tol=10e-9, maxiter=50, init=None, sample_weight=None):
         else:
             nu = 0.5 * nu
         if crit <= tol or nu <= tol:
+            break
+    else:
+        warnings.warn("Convergence not reached")
+
+    return M
+
+
+def mean_thompson(X, *, tol=1e-6, maxiter=50, init=None, sample_weight=None):
+    """Mean of SPD/HPD matrices according to the Thompson metric.
+
+    The Thompson mean of SPD/HPD matrices is described in [1]_.
+
+    Parameters
+    ----------
+    X : ndarray, shape (n_matrices, n, n)
+        Set of SPD/HPD matrices.
+    tol : float, default=1e-6
+        Tolerance to stop the gradient descent.
+    maxiter : int, default=50
+        Maximum number of iterations.
+    init : None | ndarray, shape (n, n), default=None
+        A SPD/HPD matrix used to initialize the gradient descent.
+        If None, the weighted Euclidean mean is used.
+    sample_weight : None
+        Not used.
+
+    Returns
+    -------
+    M : ndarray, shape (n, n)
+        Thompson mean.
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+
+    See Also
+    --------
+    gmean
+
+    References
+    ----------
+    .. [1] `Differential geometry with extreme eigenvalues in the positive
+        semidefinite cone
+        <https://arxiv.org/pdf/2304.07347>`_
+        C. Mostajeran, N. Da Costa, G. Van Goffrier and R. Sepulchre.
+        SIAM Journal on Matrix Analysis and Applications, 2024
+    """
+    n_matrices, n, _ = X.shape
+    if init is None:
+        M = mean_euclid(X)
+    else:
+        M = check_init(init, n)
+
+    for i in range(maxiter):
+        Mnew = geodesic_thompson(M, X[i % n_matrices], 1 / (i + 2))
+
+        crit = np.linalg.norm(Mnew - M, ord="fro")
+        M = Mnew
+        if crit <= tol:
             break
     else:
         warnings.warn("Convergence not reached")
@@ -682,7 +749,7 @@ def mean_wasserstein(X, tol=10e-9, maxiter=50, init=None, sample_weight=None):
 
     See Also
     --------
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -701,11 +768,12 @@ def mean_wasserstein(X, tol=10e-9, maxiter=50, init=None, sample_weight=None):
     else:
         init = check_init(init, n)
     M = init
+
     for _ in range(maxiter):
         X_ts = log_map_wasserstein(X, M)
         J = np.einsum("a,abc->bc", sample_weight, X_ts)
-        crit = np.linalg.norm(J)
         M = exp_map_wasserstein(J, M)
+        crit = np.linalg.norm(J)
         if crit <= tol:
             break
     else:
@@ -720,9 +788,9 @@ def mean_wasserstein(X, tol=10e-9, maxiter=50, init=None, sample_weight=None):
 mean_functions = {
     "ale": mean_ale,
     "alm": mean_alm,
+    "chol": mean_chol,
     "euclid": mean_euclid,
     "harmonic": mean_harmonic,
-    "identity": mean_identity,
     "kullback_sym": mean_kullback_sym,
     "logdet": mean_logdet,
     "logchol": mean_logchol,
@@ -730,22 +798,12 @@ mean_functions = {
     "power": mean_power,
     "poweuclid": mean_poweuclid,
     "riemann": mean_riemann,
+    "thompson": mean_thompson,
     "wasserstein": mean_wasserstein,
 }
 
 
-def _deprecate(metric, *args):
-    args = list(args)
-    for m in mean_functions.keys():
-        if m in args:
-            metric = m
-            args.remove(m)
-            warnings.warn("Parameter metric will be a strict keyword argument "
-                          "in 0.10.0.", category=DeprecationWarning)
-    return args, metric
-
-
-def mean_covariance(X, *args, metric="riemann", sample_weight=None, **kwargs):
+def gmean(X, *args, metric="riemann", sample_weight=None, **kwargs):
     """Mean of matrices according to a metric.
 
     Compute the mean of a set of matrices according to a metric [1]_.
@@ -758,8 +816,8 @@ def mean_covariance(X, *args, metric="riemann", sample_weight=None, **kwargs):
         The arguments passed to the sub function.
     metric : string | callable, default="riemann"
         Metric for mean estimation, can be:
-        "ale", "alm", "euclid", "harmonic", "identity", "kullback_sym",
-        "logchol", "logdet", "logeuclid", "riemann", "wasserstein",
+        "ale", "alm", "chol", "euclid", "harmonic", "identity", "kullback_sym",
+        "logchol", "logdet", "logeuclid", "riemann", "thompson", "wasserstein",
         or a callable function.
         If an exponent is given in args, it can be "power", "poweuclid".
     sample_weight : None | ndarray, shape (n_matrices,), default=None
@@ -780,7 +838,6 @@ def mean_covariance(X, *args, metric="riemann", sample_weight=None, **kwargs):
         S. Chevallier, E. K. Kalunga, Q. Barthélemy, E. Monacelli.
         Neuroinformatics, Springer, 2021, 19 (1), pp.93-106
     """
-    args, metric = _deprecate(metric, *args)
     mean_function = check_function(metric, mean_functions)
     M = mean_function(
         X,
@@ -789,6 +846,14 @@ def mean_covariance(X, *args, metric="riemann", sample_weight=None, **kwargs):
         **kwargs,
     )
     return M
+
+
+@deprecated(
+    "mean_covariance() is deprecated and will be removed in 0.13.0; "
+    "please use gmean()."
+)
+def mean_covariance(X, *args, metric="riemann", sample_weight=None, **kwargs):
+    return gmean(X, *args, metric="riemann", sample_weight=None, **kwargs)
 
 
 ###############################################################################
@@ -854,7 +919,7 @@ def maskedmean_riemann(X, masks, *, tol=10e-9, maxiter=100, init=None,
     See Also
     --------
     mean_riemann
-    mean_covariance
+    gmean
 
     References
     ----------
@@ -874,7 +939,6 @@ def maskedmean_riemann(X, masks, *, tol=10e-9, maxiter=100, init=None,
 
     nu = 1.0
     tau = np.finfo(np.float64).max
-    crit = np.finfo(np.float64).max
     for _ in range(maxiter):
         maskedM = _apply_masks(np.tile(M, (n_matrices, 1, 1)), masks)
         J = np.zeros((n, n), dtype=X.dtype)
@@ -932,7 +996,7 @@ def nanmean_riemann(X, tol=10e-9, maxiter=100, init=None, sample_weight=None):
     See Also
     --------
     maskedmean_riemann
-    mean_covariance
+    gmean
 
     References
     ----------

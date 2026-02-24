@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 
-from .utils.mean import mean_covariance
+from .utils.mean import gmean
 from .utils.tangentspace import tangent_space, untangent_space
 from .utils.utils import check_metric
 
@@ -12,11 +12,11 @@ class TangentSpace(TransformerMixin, BaseEstimator):
 
     """Tangent space projection.
 
-    Tangent space projection maps a set of SPD matrices to their
+    Tangent space projection maps a set of SPD/HPD matrices to their
     tangent space according to [1]_. The tangent space projection can be
     seen as a kernel operation, cf [2]_. After projection, each matrix is
     represented as a vector of size :math:`n (n+1)/2`, where :math:`n` is the
-    dimension of the SPD matrices.
+    dimension of the SPD/HPD matrices.
 
     Tangent space projection is useful to convert SPD matrices in
     Euclidean vectors while conserving the inner structure of the manifold.
@@ -25,8 +25,9 @@ class TangentSpace(TransformerMixin, BaseEstimator):
 
     Tangent space projection is a local approximation of the manifold. It takes
     one parameter, the reference matrix, that is usually estimated using the
-    geometric mean of the SPD matrices set you project. If the function ``fit``
-    is not called, the identity matrix will be used as reference matrix.
+    geometric mean of the SPD/HPD matrices set you project.
+    If the function ``fit`` is not called, the identity matrix will be used as
+    reference matrix.
     This can lead to serious degradation of performances.
     The approximation will be bigger if the matrices in the set are scattered
     in the manifold, and lower if they are grouped in a small region of the
@@ -40,8 +41,7 @@ class TangentSpace(TransformerMixin, BaseEstimator):
     metric : string | dict, default="riemann"
         The type of metric used
         for reference matrix estimation (for the list of supported metrics
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for tangent space map
+        see :func:`pyriemann.utils.mean.gmean`) and for tangent space map
         (see :func:`pyriemann.utils.tangent_space.tangent_space`).
         The metric can be a dict with two keys, "mean" and "map"
         in order to pass different metrics.
@@ -86,7 +86,7 @@ class TangentSpace(TransformerMixin, BaseEstimator):
         Parameters
         ----------
         X : ndarray, shape (n_matrices, n_channels, n_channels)
-            Set of SPD matrices.
+            Set of SPD/HPD matrices.
         y : None
             Not used, here for compatibility with sklearn API.
         sample_weight : None | ndarray, shape (n_matrices,), default=None
@@ -97,13 +97,13 @@ class TangentSpace(TransformerMixin, BaseEstimator):
         self : TangentSpace instance
             The TangentSpace instance.
         """
-        self.metric_mean, self.metric_map = check_metric(
+        self._metric_mean, self._metric_map = check_metric(
             self.metric, ["mean", "map"]
         )
 
-        self.reference_ = mean_covariance(
+        self.reference_ = gmean(
             X,
-            metric=self.metric_mean,
+            metric=self._metric_mean,
             sample_weight=sample_weight
         )
         return self
@@ -141,23 +141,23 @@ class TangentSpace(TransformerMixin, BaseEstimator):
         Parameters
         ----------
         X : ndarray, shape (n_matrices, n_channels, n_channels)
-            Set of SPD matrices.
+            Set of SPD/HPD matrices.
 
         Returns
         -------
         ts : ndarray, shape (n_matrices, n_ts)
-            Tangent space projections of SPD matrices.
+            Tangent space projections of SPD/HPD matrices.
         """
-        self.metric_mean, self.metric_map = check_metric(
+        self._metric_mean, self._metric_map = check_metric(
             self.metric, ["mean", "map"]
         )
         self._check_reference_points(X)
 
         if self.tsupdate:
-            Cr = mean_covariance(X, metric=self.metric_mean)
+            Cr = gmean(X, metric=self._metric_mean)
         else:
             Cr = self.reference_
-        return tangent_space(X, Cr, metric=self.metric_map)
+        return tangent_space(X, Cr, metric=self._metric_map)
 
     def fit_transform(self, X, y=None, sample_weight=None):
         """Fit and transform in a single function.
@@ -165,7 +165,7 @@ class TangentSpace(TransformerMixin, BaseEstimator):
         Parameters
         ----------
         X : ndarray, shape (n_matrices, n_channels, n_channels)
-            Set of SPD matrices.
+            Set of SPD/HPD matrices.
         y : None
             Not used, here for compatibility with sklearn API.
         sample_weight : None | ndarray, shape (n_matrices,), default=None
@@ -174,18 +174,18 @@ class TangentSpace(TransformerMixin, BaseEstimator):
         Returns
         -------
         ts : ndarray, shape (n_matrices, n_ts)
-            Tangent space projections of SPD matrices.
+            Tangent space projections of SPD/HPD matrices.
         """
-        self.metric_mean, self.metric_map = check_metric(
+        self._metric_mean, self._metric_map = check_metric(
             self.metric, ["mean", "map"]
         )
 
-        self.reference_ = mean_covariance(
+        self.reference_ = gmean(
             X,
-            metric=self.metric_mean,
+            metric=self._metric_mean,
             sample_weight=sample_weight
         )
-        return tangent_space(X, self.reference_, metric=self.metric_map)
+        return tangent_space(X, self.reference_, metric=self._metric_map)
 
     def inverse_transform(self, X):
         """Inverse transform.
@@ -200,13 +200,13 @@ class TangentSpace(TransformerMixin, BaseEstimator):
         Returns
         -------
         X_new : ndarray, shape (n_matrices, n_channels, n_channels)
-            Set of SPD matrices corresponding to each of tangent vector.
+            Set of SPD/HPD matrices corresponding to each of tangent vector.
         """
-        self.metric_mean, self.metric_map = check_metric(
+        self._metric_mean, self._metric_map = check_metric(
             self.metric, ["mean", "map"]
         )
         self._check_reference_points(X)
-        return untangent_space(X, self.reference_, metric=self.metric_map)
+        return untangent_space(X, self.reference_, metric=self._metric_map)
 
 
 class FGDA(TransformerMixin, BaseEstimator):
@@ -214,8 +214,8 @@ class FGDA(TransformerMixin, BaseEstimator):
     """Fisher geodesic discriminant analysis.
 
     Fisher geodesic discriminant analysis (FGDA)
-    projects matrices in tangent space,
-    applies a Fisher linear discriminant analysis (FLDA) to reduce dimention,
+    projects SPD matrices in tangent space,
+    applies a Fisher linear discriminant analysis (FLDA) to reduce dimension,
     and projects filtered tangent vectors back in the manifold [1]_.
 
     Parameters
@@ -223,8 +223,7 @@ class FGDA(TransformerMixin, BaseEstimator):
     metric : string | dict, default="riemann"
         The type of metric used
         for reference matrix estimation (for the list of supported metrics
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for tangent space map
+        see :func:`pyriemann.utils.mean.gmean`) and for tangent space map
         (see :func:`pyriemann.utils.tangent_space.tangent_space`).
         The metric can be a dict with two keys, "mean" and "map"
         in order to pass different metrics.

@@ -3,18 +3,20 @@ import functools
 
 from joblib import Parallel, delayed
 import numpy as np
-from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
+from scipy.optimize import minimize
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.svm import SVC as sklearnSVC
 from sklearn.utils.extmath import softmax
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 
-from .utils import deprecated
+from ._base import SpdClassifMixin, SpdTransfMixin
+from .tangentspace import FGDA, TangentSpace
+from .utils.base import logm
 from .utils.kernel import kernel
-from .utils.mean import mean_covariance
+from .utils.mean import gmean
 from .utils.distance import distance
 from .utils.utils import check_metric
-from .tangentspace import FGDA, TangentSpace
 
 
 def _mode_1d(X):
@@ -28,37 +30,14 @@ def _mode_2d(X, axis=1):
     return mode
 
 
-class SpdClassifMixin(ClassifierMixin):
-    """ClassifierMixin for SPD matrices"""
-
-    def score(self, X, y, sample_weight=None):
-        """Return the mean accuracy on the given test data and labels.
-
-        Parameters
-        ----------
-        X : ndarray, shape (n_matrices, n_channels, n_channels)
-            Test set of SPD matrices.
-        y : ndarray, shape (n_matrices,)
-            True labels for each matrix.
-        sample_weight : None | ndarray, shape (n_matrices,), default=None
-            Weights for each matrix.
-
-        Returns
-        -------
-        score : float
-            Mean accuracy of clf.predict(X) wrt. y.
-        """
-        return super().score(X, y, sample_weight)
-
-
-class MDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
+class MDM(SpdClassifMixin, SpdTransfMixin, BaseEstimator):
     r"""Classification by Minimum Distance to Mean.
 
     For each of the given classes :math:`k = 1, \ldots, K`, a centroid
     :math:`\mathbf{M}^k` is estimated according to the chosen metric.
 
-    Then, for each new matrix :math:`\mathbf{X}`, the class is affected
-    according to the nearest centroid [1]_:
+    Then, for each new SPD/HPD matrix :math:`\mathbf{X}`, the class is
+    affected according to the nearest centroid [1]_:
 
     .. math::
         \hat{k} = \arg \min_{k} d (\mathbf{X}, \mathbf{M}^k)
@@ -67,8 +46,7 @@ class MDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
     ----------
     metric : string | dict, default="riemann"
         Metric used for mean estimation (for the list of supported metrics,
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for distance estimation
+        see :func:`pyriemann.utils.mean.gmean`) and for distance estimation
         (see :func:`pyriemann.utils.distance.distance`).
         The metric can be a dict with two keys, "mean" and "distance"
         in order to pass different metrics.
@@ -132,16 +110,16 @@ class MDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
         self : MDM instance
             The MDM instance.
         """
-        self.metric_mean, self.metric_dist = check_metric(self.metric)
+        self._metric_mean, self._metric_dist = check_metric(self.metric)
         self.classes_ = np.unique(y)
 
         if sample_weight is None:
             sample_weight = np.ones(X.shape[0])
 
         self.covmeans_ = Parallel(n_jobs=self.n_jobs)(
-            delayed(mean_covariance)(
+            delayed(gmean)(
                 X[y == c],
-                metric=self.metric_mean,
+                metric=self._metric_mean,
                 sample_weight=sample_weight[y == c]
             ) for c in self.classes_
         )
@@ -154,7 +132,7 @@ class MDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
         """Helper to predict the distance. Equivalent to transform."""
 
         dist = Parallel(n_jobs=self.n_jobs)(
-            delayed(distance)(X, covmean, self.metric_dist)
+            delayed(distance)(X, covmean, self._metric_dist)
             for covmean in self.covmeans_
         )
 
@@ -192,32 +170,6 @@ class MDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
         """
         return self._predict_distances(X)
 
-    @deprecated(
-        "fit_predict() is deprecated and will be removed in 0.10.0; "
-        "please use fit().predict()."
-    )
-    def fit_predict(self, X, y, sample_weight=None):
-        return self.fit(X, y, sample_weight=sample_weight).predict(X)
-
-    def fit_transform(self, X, y, sample_weight=None):
-        """Fit and transform in a single function.
-
-        Parameters
-        ----------
-        X : ndarray, shape (n_matrices, n_channels, n_channels)
-            Set of SPD/HPD matrices.
-        y : ndarray, shape (n_matrices,)
-            Labels for each matrix.
-        sample_weight : None | ndarray, shape (n_matrices,), default=None
-            Weights for each matrix. If None, it uses equal weights.
-
-        Returns
-        -------
-        dist : ndarray, shape (n_matrices, n_classes)
-            Distance to each centroid according to the metric.
-        """
-        return self.fit(X, y, sample_weight=sample_weight).transform(X)
-
     def predict_proba(self, X):
         """Predict proba using softmax of negative squared distances.
 
@@ -234,7 +186,7 @@ class MDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
         return softmax(-self._predict_distances(X) ** 2)
 
 
-class FgMDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
+class FgMDM(SpdClassifMixin, SpdTransfMixin, BaseEstimator):
     """Classification by Minimum Distance to Mean with geodesic filtering.
 
     Apply geodesic filtering described in [1]_, and classify using MDM.
@@ -247,7 +199,7 @@ class FgMDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
     ----------
     metric : string | dict, default="riemann"
         Metric used for reference matrix estimation (for the list of supported
-        metrics, see :func:`pyriemann.utils.mean.mean_covariance`),
+        metrics, see :func:`pyriemann.utils.mean.gmean`),
         for distance estimation (see :func:`pyriemann.utils.distance.distance`)
         and for tangent space map
         (see :func:`pyriemann.utils.tangent_space.tangent_space`).
@@ -363,30 +315,11 @@ class FgMDM(SpdClassifMixin, TransformerMixin, BaseEstimator):
 
         Returns
         -------
-        dist : ndarray, shape (n_matrices, n_cluster)
+        dist : ndarray, shape (n_matrices, n_classes)
             Distance to each centroid according to the metric.
         """
         cov = self._fgda.transform(X)
         return self._mdm.transform(cov)
-
-    def fit_transform(self, X, y, sample_weight=None):
-        """Fit and transform in a single function.
-
-        Parameters
-        ----------
-        X : ndarray, shape (n_matrices, n_channels, n_channels)
-            Set of SPD matrices.
-        y : ndarray, shape (n_matrices,)
-            Labels for each matrix.
-        sample_weight : None | ndarray, shape (n_matrices,), default=None
-            Weights for each matrix. If None, it uses equal weights.
-
-        Returns
-        -------
-        dist : ndarray, shape (n_matrices, n_cluster)
-            Distance to each centroid according to the metric.
-        """
-        return self.fit(X, y, sample_weight=sample_weight).transform(X)
 
 
 class TSClassifier(SpdClassifMixin, BaseEstimator):
@@ -401,8 +334,7 @@ class TSClassifier(SpdClassifMixin, BaseEstimator):
     metric : string | dict, default="riemann"
         The type of metric used
         for reference matrix estimation (for the list of supported metrics
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for tangent space map
+        see :func:`pyriemann.utils.mean.gmean`) and for tangent space map
         (see :func:`pyriemann.utils.tangent_space.tangent_space`).
         The metric can be a dict with two keys, "mean" and "map"
         in order to pass different metrics.
@@ -504,14 +436,6 @@ class TSClassifier(SpdClassifMixin, BaseEstimator):
         return self._pipe.predict_proba(X)
 
 
-@deprecated(
-    "TSclassifier is deprecated and will be removed in 0.10.0; "
-    "please use TSClassifier."
-)
-class TSclassifier(TSClassifier):
-    pass
-
-
 class KNearestNeighbor(MDM):
     """Classification by k-nearest neighbors.
 
@@ -526,8 +450,7 @@ class KNearestNeighbor(MDM):
         Number of neighbors.
     metric : string | dict, default="riemann"
         Metric used for means estimation (for the list of supported metrics,
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for distance estimation
+        see :func:`pyriemann.utils.mean.gmean`) and for distance estimation
         (see :func:`pyriemann.utils.distance.distance`).
         The metric can be a dict with two keys, "mean" and "distance"
         in order to pass different metrics.
@@ -577,7 +500,7 @@ class KNearestNeighbor(MDM):
         self : NearestNeighbor instance
             The NearestNeighbor instance.
         """
-        self.metric_mean, self.metric_dist = check_metric(self.metric)
+        self._metric_mean, self._metric_dist = check_metric(self.metric)
         self.covmeans_ = X
         self.classmeans_ = y
         self.classes_ = np.unique(y)
@@ -782,14 +705,15 @@ class SVC(sklearnSVC):
 
     def _set_cref(self, X):
         if self.Cref is None:
-            self.Cref_ = mean_covariance(X, metric=self.metric)
+            self.Cref_ = gmean(X, metric=self.metric)
         elif callable(self.Cref):
             self.Cref_ = self.Cref(X)
         elif isinstance(self.Cref, np.ndarray):
             self.Cref_ = self.Cref
         else:
-            raise TypeError(f"Cref must be np.ndarray, callable or None, is "
-                            f"{self.Cref}.")
+            raise TypeError(
+                f"Cref must be np.ndarray, callable or None, is {self.Cref}."
+            )
 
     def _set_kernel(self):
         if callable(self.kernel_fct):
@@ -812,7 +736,7 @@ class SVC(sklearnSVC):
             )
 
 
-class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
+class MeanField(SpdClassifMixin, SpdTransfMixin, BaseEstimator):
     """Classification by Mean Field.
 
     The Mean Field estimates several power means for each class.
@@ -825,13 +749,17 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
     ----------
     power_list : list of float, default=[-1,0,+1]
         Exponents of power means.
-    method_label : {"sum_means", "inf_means"}, default="sum_means"
-        Method to combine labels:
+    method_combination : {"sum_means", "inf_means", None}, default="sum_means"
+        Method to combine distances from the different means of the field:
 
-        * sum_means: it assigns the matrix to the class whom the sum of
-          distances to means of the field is the lowest;
-        * inf_means: it assigns the matrix to the class of the nearest mean
-          of the field.
+        * sum_means: the classifier assigns the matrix to the class whom the
+          sum of distances to means of the field is the lowest [1]_;
+        * inf_means: the classifier assigns the matrix to the class of the
+          nearest mean of the field [1]_;
+        * None: the transformer extracts all distances, without combination
+          [2]_.
+
+        .. versionchanged:: 0.10
     metric : string, default="riemann"
         Metric used for distance estimation during prediction.
         For the list of supported metrics,
@@ -841,9 +769,10 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
     ----------
     classes_ : ndarray, shape (n_classes,)
         Labels for each class.
-    covmeans_ : dict of len(``power_list``) dicts of n_classes ndarrays of \
-            shape (n_channels, n_channels)
-        Centroids for each power and each class.
+    covmeans_ : ndarray, shape (n_classes, n_powers, n_channels, n_channels)
+        Centroids for each class and each power.
+
+        .. versionchanged:: 0.10
 
     See Also
     --------
@@ -867,13 +796,13 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
     def __init__(
         self,
         power_list=[-1, 0, 1],
-        method_label="sum_means",
+        method_combination="sum_means",
         metric="riemann",
         n_jobs=1,
     ):
         """Init."""
         self.power_list = power_list
-        self.method_label = method_label
+        self.method_combination = method_combination
         self.metric = metric
         self.n_jobs = n_jobs
 
@@ -894,45 +823,59 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
         self : MeanField instance
             The MeanField instance.
         """
+        self._n_powers = len(self.power_list)
         self.classes_ = np.unique(y)
+        self._n_classes = len(self.classes_)
 
+        _, n_channels, _ = X.shape
         if sample_weight is None:
             sample_weight = np.ones(X.shape[0])
 
-        self.covmeans_ = {}
-        for p in self.power_list:
-            means_p = {}
-            for c in self.classes_:
-                means_p[c] = mean_covariance(
+        self.covmeans_ = np.zeros(
+            (self._n_classes, self._n_powers, n_channels, n_channels),
+            dtype=X.dtype,
+        )
+        for ic, c in enumerate(self.classes_):
+            covmeans_ = Parallel(n_jobs=self.n_jobs)(
+                delayed(gmean)(
                     X[y == c],
                     p,
                     metric="power",
                     sample_weight=sample_weight[y == c],
-                )
-            self.covmeans_[p] = means_p
+                ) for p in self.power_list
+            )
+            self.covmeans_[ic] = np.stack(covmeans_, axis=0)
 
         return self
 
-    def _get_label(self, x):
-        m = np.zeros((len(self.power_list), len(self.classes_)))
-        for ip, p in enumerate(self.power_list):
-            for ic, c in enumerate(self.classes_):
-                m[ip, ic] = distance(
-                    x,
-                    self.covmeans_[p][c],
+    def _compute_distances(self, X):
+        n_matrices, _, _ = X.shape
+        dist2 = np.zeros((n_matrices, self._n_classes, self._n_powers))
+        for ic, c in enumerate(self.classes_):
+            for ip, p in enumerate(self.power_list):
+                dist2[:, ic, ip] = distance(
+                    X,
+                    self.covmeans_[ic, ip],
                     metric=self.metric,
                     squared=True,
-                )
+                )[:, 0]
+        return dist2
 
-        if self.method_label == "sum_means":
-            ipmin = np.argmin(np.sum(m, axis=1))
-        elif self.method_label == "inf_means":
-            ipmin = np.where(m == np.min(m))[0][0]
+    def _predict_distances(self, X):
+        """Helper to predict the distances. Equivalent to transform."""
+        dist2 = self._compute_distances(X)
+
+        if self.method_combination == "sum_means":
+            dist2 = np.sum(dist2, axis=2, keepdims=False)
+        elif self.method_combination == "inf_means":
+            dist2 = np.min(dist2, axis=2, keepdims=False)
+        elif self.method_combination is None:
+            dist2 = np.reshape(dist2, (dist2.shape[0], -1))
         else:
-            raise TypeError("method_label must be sum_means or inf_means")
+            raise ValueError("Unsupported method_combination "
+                             f"{self.method_combination}")
 
-        y = self.classes_[np.argmin(m[ipmin])]
-        return y
+        return np.sqrt(dist2)
 
     def predict(self, X):
         """Get the predictions.
@@ -945,36 +888,17 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
         Returns
         -------
         pred : ndarray of int, shape (n_matrices,)
-            Predictions for each matrix according to the nearest means field.
+            Predictions for each matrix according to the nearest mean field.
         """
-        pred = Parallel(n_jobs=self.n_jobs)(
-            delayed(self._get_label)(x) for x in X
-        )
-        return np.array(pred)
+        if self.method_combination is None:
+            raise ValueError("Classification by MeanField is not available "
+                             "when method_combination is None")
 
-    def _predict_distances(self, X):
-        """Helper to predict the distance. Equivalent to transform."""
-
-        dist = []
-        for x in X:
-            m = {}
-            for p in self.power_list:
-                m[p] = []
-                for c in self.classes_:
-                    m[p].append(
-                        distance(
-                            x,
-                            self.covmeans_[p][c],
-                            metric=self.metric,
-                        )
-                    )
-            pmin = min(m.items(), key=lambda x: np.sum(x[1]))[0]
-            dist.append(np.array(m[pmin]))
-
-        return np.stack(dist)
+        dist = self._predict_distances(X)
+        return self.classes_[dist.argmin(axis=1)]
 
     def transform(self, X):
-        """Get the distance to each means field.
+        """Get the distance to each mean field.
 
         Parameters
         ----------
@@ -983,17 +907,11 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
 
         Returns
         -------
-        dist : ndarray, shape (n_matrices, n_classes)
-            Distance to each means field according to the metric.
+        dist : ndarray, shape (n_matrices, n_classes) or \
+                ndarray, shape (n_matrices, n_classes x n_powers)
+            Distance to each mean field according to the metric.
         """
         return self._predict_distances(X)
-
-    @deprecated(
-        "fit_predict() is deprecated and will be removed in 0.10.0; "
-        "please use fit().predict()."
-    )
-    def fit_predict(self, X, y, sample_weight=None):
-        return self.fit(X, y, sample_weight=sample_weight).predict(X)
 
     def fit_transform(self, X, y, sample_weight=None):
         """Fit and transform in a single function.
@@ -1009,10 +927,215 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
 
         Returns
         -------
-        dist : ndarray, shape (n_matrices, n_classes)
-            Distance to each means field according to the metric.
+        dist : ndarray, shape (n_matrices, n_classes) or \
+                ndarray, shape (n_matrices, n_classes x n_powers)
+            Distance to each mean field according to the metric.
         """
-        return self.fit(X, y, sample_weight=sample_weight).transform(X)
+        return super().fit_transform(X, y, sample_weight=sample_weight)
+
+    def predict_proba(self, X):
+        """Predict proba using softmax of negative squared distances.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_matrices, n_channels, n_channels)
+            Set of SPD/HPD matrices.
+
+        Returns
+        -------
+        prob : ndarray, shape (n_matrices, n_classes)
+            Probabilities for each class.
+        """
+        if self.method_combination is None:
+            raise ValueError("Classification by MeanField is not available "
+                             "when method_combination is None")
+
+        return softmax(-self._predict_distances(X) ** 2)
+
+
+class NearestConvexHull(SpdClassifMixin, SpdTransfMixin, BaseEstimator):
+    """Classification by Nearest Convex Hull.
+
+    In Nearest Convex Hull classifier [1]_, each class is modelized by
+    the convex hull generated by the SPD matrices corresponding to this class.
+    There is no training. Calculating a distance to a hull is an optimization
+    problem and it is calculated for each testing SPD matrix and each hull.
+    The minimal distance defines the predicted class.
+
+    Parameters
+    ----------
+    metric : {"euclid", "logeuclid"}, default="logeuclid"
+        Metric used for mean estimation and distance.
+    n_jobs : int, default=1
+        Number of jobs to use for the computation.
+        If -1 all CPUs are used. If 1 is given, no parallel computing code is
+        used at all, which is useful for debugging. For n_jobs below -1,
+        (n_cpus + 1 + n_jobs) are used. Thus for n_jobs = -2, all CPUs but one
+        are used.
+    method : str, default="SLSQP"
+        Type of solver, see [2]_.
+
+    Attributes
+    ----------
+    classes_ : ndarray, shape (n_classes,)
+        Labels for each class.
+    mats_ : ndarray, shape (n_matrices, n_channels, n_channels)
+        Matrices of training set.
+    classmats_ : ndarray, shape (n_matrices,)
+        Labels of training set.
+
+    See Also
+    --------
+    MDM
+
+    Notes
+    -----
+    .. versionadded:: 0.10
+    .. versionchanged:: 0.11
+        Add support for Euclidean metric.
+
+    References
+    ----------
+    .. [1] `Convex Class Model on Symmetric Positive Definite Manifolds
+        <https://arxiv.org/pdf/1806.05343>`_
+        K. Zhao, A. Wiliem, S. Chen, and B. C. Lovell,
+        Image and Vision Computing, 2019.
+    .. [2] https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
+    """  # noqa
+
+    def __init__(self, metric="logeuclid", n_jobs=1, method="SLSQP"):
+        """Init."""
+        self.metric = metric
+        self.n_jobs = n_jobs
+        self.method = method
+
+    def fit(self, X, y, sample_weight=None):
+        """Fit (store the training data).
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_matrices, n_channels, n_channels)
+            Set of SPD matrices.
+        y : ndarray, shape (n_matrices,)
+            Labels for each matrix.
+        sample_weight : None
+            Not used, here for compatibility with sklearn API.
+
+        Returns
+        -------
+        self : NearestConvexHull instance
+            The NearestConvexHull instance.
+        """
+        if self.metric not in ["euclid", "logeuclid"]:
+            raise ValueError(f"NCH does not support metric {self.metric}")
+
+        self.mats_ = X
+        self.classmats_ = y
+        self.classes_ = np.unique(y)
+        return self
+
+    def _predict_distances(self, X):
+        """Helper to predict the distance."""
+        dist = Parallel(n_jobs=self.n_jobs)(
+            delayed(self._predict_distance)(
+                self.mats_[self.classmats_ == c],
+                X
+            ) for c in self.classes_
+        )
+        dist = np.concatenate(dist, axis=1)
+        return dist
+
+    def _predict_distance(self, A, B):
+        """Distance to a convex hull of SPD matrices.
+
+       Distance between each SPD matrix of B and the convex hull of a set of
+       SPD matrices A.
+
+        Parameters
+        ----------
+        A : ndarray, shape (n_matrices_A, n, n)
+            Set of SPD matrices.
+        B : ndarray, shape (n_matrices_B, n, n)
+            Set of SPD matrices.
+
+        Returns
+        -------
+        dist : ndarray, shape (n_matrices_B, 1)
+            Distance between each SPD matrix b of B and the convex hull of the
+            set of SPD matrices A, defined as the distance between b and
+            the matrix of the convex hull closest to matrix b.
+        """
+        n_matrices_A, _, _ = A.shape
+        n_matrices_B, _, _ = B.shape
+
+        if self.metric == "euclid":
+            A_, B_ = A, B
+        elif self.metric == "logeuclid":
+            A_, B_ = logm(A), logm(B)
+
+        D1 = np.zeros((n_matrices_A, n_matrices_A))
+        for i in range(n_matrices_A):
+            for j in range(i, n_matrices_A):
+                D1[i, j] = D1[j, i] = np.trace(A_[i] @ A_[j])
+
+        D2 = np.zeros((n_matrices_B, n_matrices_A))
+        for i in range(n_matrices_B):
+            for j in range(n_matrices_A):
+                D2[i, j] = np.trace(B_[i] @ A_[j])
+
+        dist = np.zeros((n_matrices_B, 1))
+        for i in range(n_matrices_B):
+            weights = self._find_weights_to_convex_hull(D1, D2[i])
+            H = gmean(A, metric=self.metric, sample_weight=weights)
+            dist[i] = distance(H, B[i], metric=self.metric)
+
+        return dist
+
+    def _find_weights_to_convex_hull(self, D1, d2):
+        n_matrices = D1.shape[0]
+
+        w0 = np.full(n_matrices, 1.0 / n_matrices)
+
+        def fun(w):
+            return w @ D1 @ w - 2.0 * d2 @ w
+
+        def jac(w):
+            return 2.0 * D1 @ w - 2.0 * d2
+
+        cons = [{
+            "type": "eq",
+            "fun": lambda w: np.sum(w) - 1.0,
+            "jac": lambda w: np.ones_like(w)
+        }]
+
+        res = minimize(
+            fun,
+            w0,
+            method=self.method,
+            jac=jac,
+            bounds=[(0.0, None)] * n_matrices,
+            constraints=cons,
+            options={"maxiter": 50, "ftol": 1e-6, "disp": False}
+        )
+        weights = np.clip(res.x, 0.0, 1.0)
+
+        return weights
+
+    def predict(self, X):
+        """Get the predictions.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_matrices, n_channels, n_channels)
+            Set of SPD matrices.
+
+        Returns
+        -------
+        pred : ndarray of int, shape (n_matrices,)
+            Predictions for each matrix according to the closest convex hull.
+        """
+        dist = self._predict_distances(X)
+        return self.classes_[dist.argmin(axis=1)]
 
     def predict_proba(self, X):
         """Predict proba using softmax of negative squared distances.
@@ -1028,6 +1151,24 @@ class MeanField(SpdClassifMixin, TransformerMixin, BaseEstimator):
             Probabilities for each class.
         """
         return softmax(-self._predict_distances(X) ** 2)
+
+    def transform(self, X):
+        """Get the distance to each convex hull.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_matrices, n_channels, n_channels)
+            Set of SPD matrices.
+
+        Returns
+        -------
+        dist : ndarray, shape (n_matrices, n_classes)
+            The distance to each class.
+        """
+        return self._predict_distances(X)
+
+
+###############################################################################
 
 
 def class_distinctiveness(X, y, exponent=1, metric="riemann",
@@ -1080,8 +1221,7 @@ def class_distinctiveness(X, y, exponent=1, metric="riemann",
           within the classes.
     metric : string | dict, default="riemann"
         Metric used for mean estimation (for the list of supported metrics,
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for distance estimation
+        see :func:`pyriemann.utils.mean.gmean`) and for distance estimation
         (see :func:`pyriemann.utils.distance.distance`).
         The metric can be a dict with two keys, "mean" and "distance"
         in order to pass different metrics.
@@ -1118,7 +1258,7 @@ def class_distinctiveness(X, y, exponent=1, metric="riemann",
         raise ValueError("y must contain at least two classes")
 
     means = np.array([
-        mean_covariance(X[y == c], metric=metric_mean) for c in classes
+        gmean(X[y == c], metric=metric_mean) for c in classes
     ])
 
     if len(classes) == 2:
@@ -1126,7 +1266,7 @@ def class_distinctiveness(X, y, exponent=1, metric="riemann",
         denom = 0.5 * _get_within(X, y, means, classes, exponent, metric_dist)
 
     else:
-        mean_all = mean_covariance(means, metric=metric_mean)
+        mean_all = gmean(means, metric=metric_mean)
         dists_between = [
             distance(m, mean_all, metric=metric_dist) ** exponent
             for m in means

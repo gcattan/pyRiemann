@@ -56,6 +56,7 @@ Classification
     KNearestNeighbor
     SVC
     MeanField
+    NearestConvexHull
 
 .. autosummary::
     :toctree: generated/
@@ -87,6 +88,7 @@ Clustering
     Kmeans
     KmeansPerClassTransform
     MeanShift
+    GaussianMixture
     Potato
     PotatoField
 
@@ -190,6 +192,10 @@ Datasets
     sample_gaussian_spd
     make_classification_transfer
 
+    :template: class.rst
+
+    RandomOverSampler
+
 Utils function
 --------------
 
@@ -235,6 +241,7 @@ Distances
     distance_logeuclid
     distance_poweuclid
     distance_riemann
+    distance_thompson
     distance_wasserstein
     pairwise_distance
 
@@ -248,12 +255,12 @@ Means
 .. autosummary::
     :toctree: generated/
 
-    mean_covariance
+    gmean
     mean_ale
     mean_alm
+    mean_chol
     mean_euclid
     mean_harmonic
-    mean_identity
     mean_kullback_sym
     mean_logchol
     mean_logdet
@@ -261,6 +268,7 @@ Means
     mean_power
     mean_poweuclid
     mean_riemann
+    mean_thompson
     mean_wasserstein
     maskedmean_riemann
     nanmean_riemann
@@ -285,10 +293,12 @@ Geodesics
     :toctree: generated/
 
     geodesic
+    geodesic_chol
     geodesic_euclid
     geodesic_logchol
     geodesic_logeuclid
     geodesic_riemann
+    geodesic_thompson
     geodesic_wasserstein
 
 Kernels
@@ -328,6 +338,11 @@ Tangent Space
     unupper
     tangent_space
     untangent_space
+    transport
+    transport_euclid
+    transport_logchol
+    transport_logeuclid
+    transport_riemann
 
 Base
 ~~~~~~~~~~~~~~~~~~~~~~

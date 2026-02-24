@@ -7,65 +7,66 @@ This file contains helper functions for handling remote sensing datasets
 """
 
 import os
-from typing import Tuple, Dict
-import urllib.request
+from urllib.request import urlretrieve
 
-from numpy.typing import ArrayLike
 from scipy.io import loadmat
 
+from pyriemann.utils._data import get_data_path
+from pyriemann.utils._logging import logger
 
-def download_salinas(data_path: str):
+
+def download_salinas(data_path=None):
     """Download the Salinas dataset.
 
     Parameters
     ----------
-    data_path : str
-        Path to the data folder to download the data.
+    data_path : str | None, default=None
+        Path to the destination folder for data download.
+        If None, defaults to ``get_data_path("salinas")``.
     """
-    url_base = "https://zenodo.org/records/15771735/files/"
-    urls = [
-        url_base + "Salinas.mat?download=1",
-        url_base + "Salinas_corrected.mat?download=1",
-        url_base + "Salinas_gt.mat?download=1",
+    if data_path is None:
+        data_path = get_data_path("salinas")
+    src_base = "https://zenodo.org/records/15771735/files/"
+    srcs = [
+        src_base + "Salinas.mat?download=1",
+        src_base + "Salinas_corrected.mat?download=1",
+        src_base + "Salinas_gt.mat?download=1",
     ]
-    filenames = [os.path.basename(url).split("?")[0] for url in urls]
+    filenames = [os.path.basename(src).split("?")[0] for src in srcs]
+
     if not os.path.exists(data_path):
         os.makedirs(data_path, exist_ok=True)
-    if not all(
-        [
-            os.path.exists(os.path.join(data_path, filename))
-            for filename in filenames
-        ]
-    ):
-        print("Downloading Salinas dataset...")
-        for url, filename in zip(urls, filenames):
-            urllib.request.urlretrieve(url, os.path.join(data_path, filename))
-        print("Done.")
-    else:
-        print("Salinas dataset already downloaded.")
+    logger.info("\n")
+    for src, filename in zip(srcs, filenames):
+        dst = os.path.join(data_path, filename)
+        if not os.path.exists(dst):
+            msg = f"Downloading file '{filename}' from '{src}' to '{dst}'."
+            logger.info(msg)
+            urlretrieve(src, dst)
 
 
-def read_salinas(
-    data_path: str, version: str = "corrected"
-) -> Tuple[ArrayLike, ArrayLike, Dict[int, str]]:
+def read_salinas(data_path=None, version="corrected"):
     """Read Salinas hyperspectral data.
 
     Parameters
     ----------
-    data_path : str
-        Path to the data folder.
-    version : str, default="corrected"
-        Version of the data to read. Can be either "corrected" or "raw".
+    data_path : str | None, default=None
+        Path to the folder for data reading.
+        If None, defaults to ``get_data_path("salinas")``.
+    version : {"corrected", "raw"}, default="corrected"
+        Version of the data to read.
 
     Returns
     -------
-    data : ArrayLike, shape (512, 217, 204)
+    data : array-like, shape (512, 217, 204)
         Data.
-    labels : ArrayLike, shape (512, 217)
+    labels : array-like, shape (512, 217)
         Labels.
     labels_names : dict[int, str]
         Dictionary mapping labels to their names.
     """
+    if data_path is None:
+        data_path = get_data_path("salinas")
     if version == "corrected":
         data_file = os.path.join(data_path, "Salinas_corrected.mat")
     else:
@@ -94,27 +95,27 @@ def read_salinas(
     return data, labels, labels_names
 
 
-def download_uavsar(data_path: str, scene: int):
+def download_uavsar(data_path=None, scene=1):
     """Download the UAVSAR dataset.
 
     Parameters
     ----------
-    data_path : str
-        Path to the data folder to download the data.
-    scene : {1, 2}
-        Scene to download.
+    data_path : str | None, default=None
+        Path to the destination folder for data download.
+        If None, defaults to ``get_data_path("uavsar")``.
+    scene : {1, 2}, default=1
+        Scene index to download.
     """
+    if data_path is None:
+        data_path = get_data_path("uavsar")
     assert scene in [1, 2], f"Unknown scene {scene} for UAVSAR dataset"
-    if scene == 1:
-        url = "https://zenodo.org/records/10625505/files/scene1.npy?download=1"
-    else:
-        url = "https://zenodo.org/records/10625505/files/scene2.npy?download=1"
     filename = f"scene{scene}.npy"
+    src = f"https://zenodo.org/records/10625505/files/{filename}?download=1"
+
     if not os.path.exists(data_path):
         os.makedirs(data_path, exist_ok=True)
-    if not os.path.exists(os.path.join(data_path, filename)):
-        print(f"Downloading UAVSAR dataset scene {scene}...")
-        urllib.request.urlretrieve(url, os.path.join(data_path, filename))
-        print("Download done.")
-    else:
-        print("UAVSAR dataset already downloaded.")
+    dst = os.path.join(data_path, filename)
+    if not os.path.exists(dst):
+        logger.info("\n")
+        logger.info(f"Downloading file '{filename}' from '{src}' to '{dst}'.")
+        urlretrieve(src, dst)

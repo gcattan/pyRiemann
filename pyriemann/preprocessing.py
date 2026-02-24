@@ -3,11 +3,10 @@ import numbers
 import numpy as np
 from scipy.linalg import eigh
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.utils.extmath import stable_cumsum
 
 from .utils.base import sqrtm, invsqrtm
 from .utils.geodesic import geodesic
-from .utils.mean import mean_covariance
+from .utils.mean import gmean
 
 
 class Whitening(TransformerMixin, BaseEstimator):
@@ -22,7 +21,7 @@ class Whitening(TransformerMixin, BaseEstimator):
         Metric for the estimation of mean matrix used for whitening and
         dimension reduction.
         For the list of supported metrics,
-        see :func:`pyriemann.utils.mean.mean_covariance`.
+        see :func:`pyriemann.utils.mean.gmean`.
     dim_red : None | dict, default=None
         If ``None`` :
             no dimension reduction during whitening.
@@ -86,7 +85,7 @@ class Whitening(TransformerMixin, BaseEstimator):
             The Whitening instance.
         """
         # weighted mean of input matrices
-        self._mean = mean_covariance(
+        self._mean = gmean(
             X,
             metric=self.metric,
             sample_weight=sample_weight
@@ -143,7 +142,7 @@ class Whitening(TransformerMixin, BaseEstimator):
                 raise ValueError(
                     "Value expl_var must be included in (0, 1] (Got %d)"
                     % dim_red_val)
-            cum_expl_var = stable_cumsum(self._eigvals / self._eigvals.sum())
+            cum_expl_var = np.cumsum(self._eigvals / self._eigvals.sum())
             if self.verbose:
                 print("Cumulative explained variance: \n %r"
                       % cum_expl_var)
@@ -215,7 +214,7 @@ class Whitening(TransformerMixin, BaseEstimator):
             return self
 
         if not hasattr(self, "_mean"):
-            self._mean = mean_covariance(
+            self._mean = gmean(
                 X,
                 metric=self.metric,
                 sample_weight=sample_weight,
@@ -226,7 +225,7 @@ class Whitening(TransformerMixin, BaseEstimator):
                 "X does not have the good number of channels. Should be %d but"
                 " got %d." % (self._mean.shape[-1], n_channels))
         else:
-            Xm = mean_covariance(
+            Xm = gmean(
                 X,
                 metric=self.metric,
                 sample_weight=sample_weight,

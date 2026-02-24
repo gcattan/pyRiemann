@@ -1,11 +1,10 @@
 from .docs import deprecated  # noqa: F401
 from .mean import (
-    mean_covariance,
+    gmean,
     mean_ale,
     mean_alm,
     mean_euclid,
     mean_harmonic,
-    mean_identity,
     mean_kullback_sym,
     mean_logdet,
     mean_logeuclid,
@@ -22,12 +21,11 @@ from .median import (
 
 
 __all__ = [
-    "mean_covariance",
+    "gmean",
     "mean_ale",
     "mean_alm",
     "mean_euclid",
     "mean_harmonic",
-    "mean_identity",
     "mean_kullback_sym",
     "mean_logdet",
     "mean_logeuclid",

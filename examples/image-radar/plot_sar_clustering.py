@@ -15,6 +15,7 @@ import numpy as np
 from sklearn.pipeline import Pipeline
 
 from pyriemann.clustering import Kmeans
+from pyriemann.utils._data import get_data_path
 from pyriemann.estimation import Covariances
 from helpers.datasets_helpers import download_uavsar
 from helpers.processing_helpers import SlidingWindowVectorize
@@ -25,7 +26,6 @@ from helpers.processing_helpers import SlidingWindowVectorize
 # ----------
 
 window_size = 7
-data_path = "./data"
 scene = 1  # Chose between 1 or 2
 date = 0
 n_jobs = -1
@@ -37,8 +37,9 @@ estimator = "scm"  # Chose any estimator from "scm", "lwf", "oas", "mcd", "hub"
 # Load data
 # ---------
 
-print(f"Loading data from scene {scene}.")
-download_uavsar(data_path, scene)
+print(f"Loading UAVSAR data from scene {scene}.")
+download_uavsar(scene=scene)
+data_path = get_data_path("uavsar")
 data = np.load(os.path.join(data_path, f"scene{scene}.npy"))
 data = data[:, :, :, date]  # Select one date only
 data_visualization = data.copy()  # To avoid aliasing when showing data
@@ -66,13 +67,11 @@ x_values = np.arange(window_size//2, width-window_size//2) * resolution_x
 y_values = np.arange(window_size//2, height-window_size//2) * resolution_y
 X_res, Y_res = np.meshgrid(x_values, y_values)
 
-print("Reading done.")
 
 ###############################################################################
 # Print configuration
 # -------------------
 
-print("-"*80)
 print(f"Size of dataset: {data.shape}")
 print(f"date = {date}")
 print(f"window_size = {window_size}")
@@ -80,7 +79,6 @@ print(f"n_clusters = {n_clusters}")
 print(f"n_jobs = {n_jobs}")
 print(f"max_iter = {max_iter}")
 print(f"estimator = {estimator}")
-print("-"*80)
 
 ###############################################################################
 # Pipelines definition
@@ -127,13 +125,11 @@ for pipeline_name, pipeline in zip(pipelines_names, pipelines):
     results[pipeline_name] = \
         pipeline.named_steps["sliding_window"].inverse_predict(preds)
     print("-"*60)
-print("Done")
 
 ###############################################################################
 # Plot data
 # ---------
 
-print("Plotting")
 plot_value = 20*np.log10(np.sum(np.abs(data_visualization)**2, axis=2))
 figure, ax = plt.subplots(figsize=(5, 5))
 plt.pcolormesh(X_image, Y_image, plot_value, cmap="gray")

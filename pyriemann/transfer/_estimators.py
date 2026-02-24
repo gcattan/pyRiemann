@@ -18,11 +18,10 @@ from ..optimization.grassmann import (
 from ._tools import decode_domains
 from ..classification import MDM
 from ..preprocessing import Whitening
-from ..utils import deprecated
 from ..utils.base import invsqrtm, powm, sqrtm
 from ..utils.distance import distance
 from ..utils.geodesic import geodesic
-from ..utils.mean import mean_covariance, mean_riemann
+from ..utils.mean import gmean
 from ..utils.utils import check_weights, check_metric
 
 
@@ -129,7 +128,7 @@ class TLCenter(TransformerMixin, BaseEstimator):
     metric : str, default="riemann"
         For inputs in manifold,
         metric used for mean estimation. For the list of supported metrics,
-        see :func:`pyriemann.utils.mean.mean_covariance`.
+        see :func:`pyriemann.utils.mean.gmean`.
         Note, however, that only when using the "riemann" metric that we are
         ensured to re-center the matrices precisely to the identity.
 
@@ -161,14 +160,6 @@ class TLCenter(TransformerMixin, BaseEstimator):
         """Init"""
         self.target_domain = target_domain
         self.metric = metric
-
-    @property
-    @deprecated(
-        "Attribute `recenter_` is deprecated and will be removed in 0.10.0; "
-        "please use `centers_`."
-    )
-    def recenter_(self):
-        return self.centers_
 
     def fit(self, X, y_enc, sample_weight=None):
         """Fit TLCenter.
@@ -365,14 +356,6 @@ class TLScale(TransformerMixin, BaseEstimator):
         self.centered_data = centered_data
         self.metric = metric
 
-    @property
-    @deprecated(
-        "Attribute `dispersions_` is deprecated and will be removed in 0.10.0;"
-        " please use `scales_`."
-    )
-    def dispersions_(self):
-        return self.scales_
-
     def fit(self, X, y_enc, sample_weight=None):
         """Fit TLScale.
 
@@ -409,8 +392,8 @@ class TLScale(TransformerMixin, BaseEstimator):
                 if self.centered_data:
                     self._means[d] = np.eye(X.shape[-1])
                 else:
-                    self._means[d] = mean_riemann(
-                        X[idx], sample_weight=sample_weight_d
+                    self._means[d] = gmean(
+                        X[idx], sample_weight=sample_weight_d, metric="riemann"
                     )
                 dist = distance(
                     X[idx],
@@ -533,14 +516,6 @@ class TLScale(TransformerMixin, BaseEstimator):
         return X_new
 
 
-@deprecated(
-    "TLStretch is deprecated and will be removed in 0.10.0; "
-    "please use TLScale."
-)
-class TLStretch(TLScale):
-    pass
-
-
 class TLRotate(TransformerMixin, BaseEstimator):
     """Rotation for transfer learning.
 
@@ -588,6 +563,12 @@ class TLRotate(TransformerMixin, BaseEstimator):
         If "max", all components are kept.
     n_clusters : int, default=3
         For inputs in tangent space, number of clusters used to split data.
+    tol_step : float, default=1e-9
+        For inputs in manifold, stopping criterion based on the norm of
+        the descent direction.
+    maxiter : int, default=10_000
+        For inputs in manifold, maximum number of iterations in the
+        optimization procedure.
 
     Attributes
     ----------
@@ -602,7 +583,7 @@ class TLRotate(TransformerMixin, BaseEstimator):
     -----
     .. versionadded:: 0.4
     .. versionchanged:: 0.8
-        Added support for tangent space rotation.
+        Add support for tangent space rotation.
 
     References
     ----------
@@ -630,6 +611,8 @@ class TLRotate(TransformerMixin, BaseEstimator):
         expl_var=0.999,
         n_components=1,
         n_clusters=3,
+        tol_step=1e-9,
+        maxiter=10_000,
     ):
         """Init"""
         self.target_domain = target_domain
@@ -639,6 +622,8 @@ class TLRotate(TransformerMixin, BaseEstimator):
         self.expl_var = expl_var
         self.n_components = n_components
         self.n_clusters = n_clusters
+        self.tol_step = tol_step
+        self.maxiter = maxiter
 
     def fit(self, X, y_enc, sample_weight=None):
         """Fit TLRotate.
@@ -683,9 +668,10 @@ class TLRotate(TransformerMixin, BaseEstimator):
         idx = domains == self.target_domain
         X_target, y_target = X[idx], y_enc[idx]
         M_target = np.stack([
-            mean_riemann(
+            gmean(
                 X_target[y_target == label],
                 sample_weight=sample_weight[idx][y_target == label],
+                metric="riemann"
             ) for label in np.unique(y_target)
         ])
 
@@ -694,16 +680,19 @@ class TLRotate(TransformerMixin, BaseEstimator):
         rotations = Parallel(n_jobs=self.n_jobs)(
             delayed(_get_rotation_manifold)(
                 np.stack([
-                    mean_riemann(
+                    gmean(
                         X[domains == d][y_enc[domains == d] == label],
                         sample_weight=sample_weight[domains == d][
                             y_enc[domains == d] == label
-                        ]
+                        ],
+                        metric="riemann"
                     ) for label in np.unique(y_enc[domains == d])
                 ]),
                 M_target,
                 weights=self.weights,
                 metric=self.metric,
+                tol_step=self.tol_step,
+                maxiter=self.maxiter,
             ) for d in source_domains
         )
 
@@ -951,7 +940,11 @@ class TLEstimator(BaseEstimator):
         else:
             self.estimator.fit(X_dec, y_dec, sample_weight=weights)
 
+        self._is_fitted = True
         return self
+
+    def __sklearn_is_fitted__(self):
+        return hasattr(self, "_is_fitted") and self._is_fitted
 
     def predict(self, X):
         """Get the predictions.
@@ -1149,8 +1142,7 @@ class MDWM(MDM):
         Name of the target domain in extended labels.
     metric : string | dict, default="riemann"
         Metric used for mean estimation (for the list of supported metrics,
-        see :func:`pyriemann.utils.mean.mean_covariance`) and
-        for distance estimation
+        see :func:`pyriemann.utils.mean.gmean`) and for distance estimation
         (see :func:`pyriemann.utils.distance.distance`).
         The metric can be a dict with two keys, "mean" and "distance"
         in order to pass different metrics.
@@ -1224,7 +1216,7 @@ class MDWM(MDM):
         self : MDWM instance
             The MDWM instance.
         """
-        self.metric_mean, self.metric_dist = check_metric(self.metric)
+        self._metric_mean, self._metric_dist = check_metric(self.metric)
 
         if not 0 <= self.domain_tradeoff <= 1:
             raise ValueError(
@@ -1251,9 +1243,9 @@ class MDWM(MDM):
 
         self.source_means_ = np.stack(
             Parallel(n_jobs=self.n_jobs)(
-                delayed(mean_covariance)(
+                delayed(gmean)(
                     X_src[y_src == c],
-                    metric=self.metric_mean,
+                    metric=self._metric_mean,
                     sample_weight=sample_weight[y_src == c],
                 ) for c in self.classes_
             )
@@ -1261,9 +1253,9 @@ class MDWM(MDM):
 
         self.target_means_ = np.stack(
             Parallel(n_jobs=self.n_jobs)(
-                delayed(mean_covariance)(
+                delayed(gmean)(
                     X_tgt[y_tgt == c],
-                    metric=self.metric_mean,
+                    metric=self._metric_mean,
                 ) for c in self.classes_
             )
         )
@@ -1272,7 +1264,7 @@ class MDWM(MDM):
             self.source_means_,
             self.target_means_,
             self.domain_tradeoff,
-            metric=self.metric_mean,
+            metric=self._metric_mean,
         )
 
         return self

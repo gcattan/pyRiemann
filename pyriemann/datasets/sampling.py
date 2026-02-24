@@ -4,11 +4,13 @@ import warnings
 from joblib import Parallel, delayed
 import numpy as np
 from scipy.stats import multivariate_normal
+from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
-from ..utils import deprecated
-from ..utils.base import sqrtm, expm
+from ..utils.base import sqrtm
+from ..utils.geodesic import geodesic
 from ..utils.test import is_sym_pos_semi_def as is_spsd
+from ..utils.tangentspace import exp_map_riemann, unupper
 
 
 def _pdf_r(r, sigma):
@@ -248,12 +250,12 @@ def _slice_sampling(ptarget, n_samples, x0, n_burnin=20, thin=10,
     ptarget : function with one input
         The target pdf to sample from or a multiple of it.
     n_samples : int
-        How many samples to get from the ptarget distribution.
+        Number of samples to get from the ptarget distribution.
     x0 : ndarray
         Initial state for the MCMC procedure. Note that the shape of this array
         defines the dimensionality n_dim of the matrices to be sampled.
     n_burnin : int, default=20
-        How many samples to discard from the beginning of the chain generated
+        Number of samples to discard from the beginning of the chain generated
         by the slice sampling procedure. Usually the first samples are prone to
         non-stationary behavior and do not follow very well the target pdf.
     thin : int, default=10
@@ -266,7 +268,7 @@ def _slice_sampling(ptarget, n_samples, x0, n_burnin=20, thin=10,
         Pass an int for reproducible output across multiple function calls.
     n_jobs : int, default=1
         Number of jobs to use for the computation. This works by computing
-        each of the class centroid in parallel. If -1 all CPUs are used.
+        each sample in parallel. If -1 all CPUs are used.
 
     Returns
     -------
@@ -280,7 +282,7 @@ def _slice_sampling(ptarget, n_samples, x0, n_burnin=20, thin=10,
         )
     if (n_burnin <= 0) or (not isinstance(n_burnin, int)):
         raise ValueError(
-            f"n_samples must be a positive integer (Got {n_burnin})"
+            f"n_burnin must be a positive integer (Got {n_burnin})"
         )
     if (thin <= 0) or (not isinstance(thin, int)):
         raise ValueError(f"thin must be a positive integer (Got {thin})")
@@ -312,7 +314,7 @@ def _sample_parameter_r(n_samples, n_dim, sigma,
     Parameters
     ----------
     n_samples : int
-        How many samples to generate.
+        Number of samples to generate.
     n_dim : int
         Dimensionality of the SPD matrices to be sampled.
     sigma : float
@@ -321,7 +323,7 @@ def _sample_parameter_r(n_samples, n_dim, sigma,
         Pass an int for reproducible output across multiple function calls.
     n_jobs : int, default=1
         Number of jobs to use for the computation. This works by computing
-        each of the class centroid in parallel. If -1 all CPUs are used.
+        each sample in parallel. If -1 all CPUs are used.
     sampling_method : {"auto", "slice", "rejection"}, default="auto"
         Method used to sample parameter r: "auto", "slice" or "rejection".
         If "auto", sampling_method will be equal to "slice" for n_dim != 2 and
@@ -377,7 +379,7 @@ def _sample_parameter_U(n_samples, n_dim, random_state=None):
     Parameters
     ----------
     n_samples : int
-        How many samples to generate.
+        Number of samples to generate.
     n_dim : int
         Dimensionality of the SPD matrices to be sampled.
     random_state : int | RandomState instance | None, default=None
@@ -410,7 +412,7 @@ def _sample_gaussian_spd_centered(n_matrices, n_dim, sigma, random_state=None,
     Parameters
     ----------
     n_matrices : int
-        How many matrices to generate.
+        Number of matrices to generate.
     n_dim : int
         Dimensionality of the SPD matrices to be sampled.
     sigma : float
@@ -419,7 +421,7 @@ def _sample_gaussian_spd_centered(n_matrices, n_dim, sigma, random_state=None,
         Pass an int for reproducible output across multiple function calls.
     n_jobs : int, default=1
         Number of jobs to use for the computation. This works by computing
-        each of the class centroid in parallel. If -1 all CPUs are used.
+        each sample in parallel. If -1 all CPUs are used.
     sampling_method : {"auto", "slice", "rejection"}, default="auto"
         Method used to sample parameter r: "auto", "slice" or "rejection".
         If "auto", sampling_method will be equal to "slice" for n_dim != 2 and
@@ -474,27 +476,37 @@ def sample_gaussian_spd(n_matrices, mean, sigma, random_state=None,
     """Sample a Riemannian Gaussian distribution.
 
     Sample SPD matrices from a Riemannian Gaussian distribution centered at
-    mean and with dispersion parametrized by sigma. This distribution has been
-    defined in [1]_ and generalizes the notion of a Gaussian distribution to
-    the space of SPD matrices. The sampling is based on a spectral
-    factorization of SPD matrices in terms of their eigenvectors (U-parameters)
-    and the log of the eigenvalues (r-parameters).
+    mean and with dispersion parametrized by sigma.
+
+    If sigma is a float, it samples from the distribution defined in [1]_ that
+    generalizes the notion of a Gaussian distribution to the space of SPD
+    matrices. This sampling is based on a spectral factorization of SPD
+    matrices in terms of their eigenvectors (U-parameters) and the log of the
+    eigenvalues (r-parameters).
+
+    If sigma is a covariance matrix, it samples from the wrapped Gaussian
+    distribution defined in [2]_.
 
     Parameters
     ----------
     n_matrices : int
-        How many matrices to generate.
+        Number of matrices to generate.
     mean : ndarray, shape (n_dim, n_dim)
         Center of the Riemannian Gaussian distribution.
-    sigma : float
-        Dispersion of the Riemannian Gaussian distribution.
+    sigma : float | ndarray, shape (n_dim * (n_dim + 1) / 2, \
+            n_dim * (n_dim + 1) / 2)
+        If float, dispersion of the Riemannian Gaussian distribution [1]_.
+        If ndarray, covariance matrix of the wrapped Gaussian
+        distribution [2]_.
     random_state : int | RandomState instance | None, default=None
         Pass an int for reproducible output across multiple function calls.
     n_jobs : int, default=1
-        The number of jobs to use for the computation. This works by computing
-        each of the class centroid in parallel. If -1 all CPUs are used.
+        When sigma is a float,
+        the number of jobs to use for the computation. This works by computing
+        each sample in parallel. If -1 all CPUs are used.
     sampling_method : {"auto", "slice", "rejection"}, default="auto"
-        Method used to sample eigenvalues: "auto", "slice" or "rejection".
+        When sigma is a float,
+        method used to sample eigenvalues: "auto", "slice" or "rejection".
         If "auto", sampling_method will be equal to "slice" for n_dim != 2 and
         equal to "rejection" for n_dim = 2.
 
@@ -508,6 +520,8 @@ def sample_gaussian_spd(n_matrices, mean, sigma, random_state=None,
     Notes
     -----
     .. versionadded:: 0.3
+    .. versionchanged:: 0.11
+        Add support for dispersion defined as a covariance matrix.
 
     References
     ----------
@@ -516,22 +530,53 @@ def sample_gaussian_spd(n_matrices, mean, sigma, random_state=None,
         <https://hal.archives-ouvertes.fr/hal-01710191>`_
         S. Said, L. Bombrun, Y. Berthoumieu, and J. Manton. IEEE Trans Inf
         Theory, vol. 63, pp. 2153–2170, 2017.
+    .. [2] `Wrapped gaussian on the manifold of symmetric positive
+        definite matrices
+        <https://openreview.net/pdf?id=EhStXG4dCS>`_
+        T. de Surrel, F. Lotte, S. Chevallier, and F. Yger. International
+        Conference on Machine Learning (ICML), July 2025, Vancouver, Canada.
     """
 
-    n_dim = mean.shape[0]
-    # dispersion is corrected w.r.t. dimension
-    samples_centered = _sample_gaussian_spd_centered(
-        n_matrices=n_matrices,
-        n_dim=n_dim,
-        sigma=sigma / np.sqrt(n_dim),
-        random_state=random_state,
-        n_jobs=n_jobs,
-        sampling_method=sampling_method,
-    )
+    n_dim, _ = mean.shape
 
-    # apply the parallel transport to mean on each of the samples
-    mean_sqrt = sqrtm(mean)
-    samples = mean_sqrt @ samples_centered @ mean_sqrt
+    if isinstance(sigma, (int, float)):
+        # generate samples centered at identity
+        samples_centered = _sample_gaussian_spd_centered(
+            n_matrices=n_matrices,
+            n_dim=n_dim,
+            sigma=sigma / np.sqrt(n_dim),  # dispersion corrected w.r.t. dim
+            random_state=random_state,
+            n_jobs=n_jobs,
+            sampling_method=sampling_method,
+        )
+
+        # apply the parallel transport from identity to mean on samples
+        mean_sqrt = sqrtm(mean)
+        samples = mean_sqrt @ samples_centered @ mean_sqrt
+
+    elif isinstance(sigma, np.ndarray):
+        n_ts = n_dim * (n_dim + 1) // 2
+        if sigma.shape != (n_ts, n_ts):
+            raise ValueError(
+                f"sigma must be a covariance matrix of shape ({n_ts}, {n_ts})."
+            )
+
+        # generate samples from the multivariate normal distribution
+        rs = check_random_state(random_state)
+        samples_ts_norm = rs.multivariate_normal(
+            size=n_matrices,
+            mean=np.zeros(n_ts),
+            cov=sigma,
+        )
+
+        # send the tangent space at mean
+        mean_sqrt = sqrtm(mean)
+        samples_ts = mean_sqrt @ unupper(samples_ts_norm) @ mean_sqrt
+        # map back to the manifold
+        samples = exp_map_riemann(samples_ts, mean, Cm12=True)
+
+    else:
+        raise ValueError("sigma must be either a float or a ndarray.")
 
     if not is_spsd(samples):
         msg = "Some of the sampled matrices are very badly conditioned and \
@@ -542,49 +587,159 @@ def sample_gaussian_spd(n_matrices, mean, sigma, random_state=None,
     return samples
 
 
-@deprecated(
-    "generate_random_spd_matrix is deprecated and will be removed in 0.10.0; "
-    "please use make_matrices with kind='spd'."
-)
-def generate_random_spd_matrix(n_dim, random_state=None, *, mat_mean=.0,
-                               mat_std=1.):
-    """Generate a random SPD matrix.
+class RandomOverSampler(BaseEstimator):
+    """Random over-sampling for SPD/HPD matrices.
+
+    For each class, output SPD/HPD matrices are interpolated along the geodesic
+    between input SPD/HPD matrices [1]_.
 
     Parameters
     ----------
-    n_dim : int
-        Dimensionality of the matrix to sample.
+    metric : string, default="riemann"
+        Metric used for SPD/HPD matrices interpolation
+        (see :func:`pyriemann.utils.geodesic.geodesic`).
+    sampling_strategy : str, default="auto"
+        Specify the class targeted by the resampling. The number of matrices in
+        the different classes will be equalized. Possible choices are:
+
+        - "minority": resample only the minority class;
+        - "not minority": resample all classes but the minority class;
+        - "not majority": resample all classes but the majority class;
+        - "all": resample all classes;
+        - "auto": equivalent to "not majority".
     random_state : int | RandomState instance | None, default=None
         Pass an int for reproducible output across multiple function calls.
-    mat_mean : float, default=0.0
-        Mean of random values to generate matrix.
-    mat_std : float, default=1.0
-        Standard deviation of random values to generate matrix.
-
-    Returns
-    -------
-    C : ndarray, shape (n_dim, n_dim)
-        Random SPD matrix.
+    n_jobs : int, default=1
+        Number of jobs to use for the computation. This works by computing
+        each of the class resampling in parallel.
+        If -1 all CPUs are used. If 1 is given, no parallel computing code is
+        used at all, which is useful for debugging. For n_jobs below -1,
+        (n_cpus + 1 + n_jobs) are used. Thus for n_jobs = -2, all CPUs but one
+        are used.
 
     Notes
     -----
-    .. versionadded:: 0.3
+    .. versionadded:: 0.10
+
+    References
+    ----------
+    .. [1] `Data augmentation in Riemannian space for brain-computer interfaces
+        <https://hal.science/hal-01351990/>`_
+        E. Kalunga, S. Chevallier and Q. Barthélemy.
+        ICML Workshop on Statistics, Machine Learning and Neuroscience, 2015.
     """
 
-    if (n_dim <= 0) or (not isinstance(n_dim, int)):
-        raise ValueError(
-            f"n_samples must be a positive integer (Got {n_dim})"
+    def __init__(
+        self,
+        metric="riemann",
+        sampling_strategy="auto",
+        random_state=None,
+        n_jobs=1
+    ):
+        """Init."""
+        self.metric = metric
+        self.sampling_strategy = sampling_strategy
+        self.random_state = random_state
+        self.n_jobs = n_jobs
+
+    def fit(self, X, y):
+        """Check parameters of the sampler.
+
+        You should use ``fit_resample`` in all cases.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_matrices, n_channels, n_channels)
+            Set of SPD/HPD matrices.
+        y : ndarray, shape (n_matrices,)
+            Labels for each matrix.
+
+        Returns
+        -------
+        self : object
+            Return the instance itself.
+        """
+        self._rs = check_random_state(self.random_state)
+        return self
+
+    def fit_resample(self, X, y):
+        """Resample the matrices.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_matrices, n_channels, n_channels)
+            Set of SPD/HPD matrices.
+        y : ndarray, shape (n_matrices,)
+            Labels for each matrix.
+
+        Returns
+        -------
+        X_resampled : ndarray, shape (n_matrices_new, n_channels, n_channels)
+            Set of resampled SPD/HPD matrices.
+        y_resampled : ndarray, shape (n_matrices_new,)
+            Labels for each resampled matrix.
+        """
+        self.fit(X, y)
+
+        _, self._channels, _ = X.shape
+        output_counts = self._check_sampling_strategy(y)
+
+        res = Parallel(n_jobs=self.n_jobs)(
+            delayed(self._resample)(X[y == c], c, n_mats)
+            for c, n_mats in output_counts.items()
         )
 
-    rs = check_random_state(random_state)
-    A = mat_mean + mat_std * rs.randn(n_dim, n_dim)
-    A = 0.5 * (A + A.T)
-    C = expm(A)
+        X_resampled_, y_resampled_ = zip(*res)
+        X_resampled = np.concatenate((X,) + X_resampled_, axis=0)
+        y_resampled = np.concatenate((y,) + y_resampled_, axis=0)
+        return X_resampled, y_resampled
 
-    if not is_spsd(C):
-        msg = "The sampled matrix is very badly conditioned and may not \
-               behave numerically as a SPD matrix. Try sampling again or \
-               reducing the dimensionality of the matrix."
-        warnings.warn(msg)
+    def _check_sampling_strategy(self, y):
 
-    return C
+        classes, counts = np.unique(y, return_counts=True)
+        input_counts = dict(zip(classes, counts))
+        n_mats_majority = max(input_counts.values())
+
+        if self.sampling_strategy == "minority":
+            class_minority = min(input_counts, key=input_counts.get)
+            return {
+                key: n_mats_majority - value
+                for (key, value) in input_counts.items()
+                if key == class_minority
+            }
+
+        if self.sampling_strategy == "not minority":
+            class_minority = min(input_counts, key=input_counts.get)
+            return {
+                key: n_mats_majority - value
+                for (key, value) in input_counts.items()
+                if key != class_minority
+            }
+
+        if self.sampling_strategy in ["not majority", "auto"]:
+            class_majority = max(input_counts, key=input_counts.get)
+            return {
+                key: n_mats_majority - value
+                for (key, value) in input_counts.items()
+                if key != class_majority
+            }
+
+        if self.sampling_strategy == "all":
+            return {
+                key: n_mats_majority - value
+                for (key, value) in input_counts.items()
+            }
+
+        raise ValueError(
+            f"Sampling strategy {self.sampling_strategy} is not supported."
+        )
+
+    def _resample(self, X, y, n_mats):
+        X_resampled = np.empty((n_mats, self._channels, self._channels))
+
+        for n in range(n_mats):
+            i, j = np.random.choice(len(X), size=2, replace=False)
+            alpha = self._rs.uniform(0, 1)
+            X_resampled[n] = geodesic(X[i], X[j], alpha, metric=self.metric)
+
+        return X_resampled, np.full(n_mats, y)

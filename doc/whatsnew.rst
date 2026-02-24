@@ -7,8 +7,54 @@ What's new in the package
 
 A catalog of new features, improvements, and bug-fixes in each release.
 
-v0.10.dev
---------
+v0.11.dev
+---------
+
+- Enhance :func:`pyriemann.datasets.sample_gaussian_spd` adding support for dispersion defined as a covariance matrix. :pr:`412` by :user:`thibaultdesurrel`
+
+- Add :class:`pyriemann.clustering.GaussianMixture`. :pr:`411` by :user:`qbarthelemy`
+
+- Enhance :class:`pyriemann.classification.NearestConvexHull` to support "euclid" metric. :pr:`415` by :user:`qbarthelemy`
+
+- Deprecate ``mean_covariance``, renamed into :func:`pyriemann.utils.mean.gmean`. :pr:`419` by :user:`qbarthelemy`
+
+- Correct log-Euclidean parallel transport. :pr:`420` by :user:`qbarthelemy`
+
+- Add CI caching for Zenodo datasets to speed up documentation builds and avoid rate limiting. :pr:`417` by :user:`bruAristimunha`
+
+v0.10 (January 2026)
+--------------------
+
+- Add example in gallery to compare clustering algorithms on synthetic datasets. :pr:`374` by :user:`qbarthelemy`
+
+- Enhance :class:`pyriemann.classification.MeanField`, to be used as a feature extractor. :pr:`377` by :user:`qbarthelemy`
+
+- Update pyRiemann from Python 3.9 - 3.11 to 3.10 - 3.12. :pr:`378` by :user:`qbarthelemy`
+
+- Deprecate ``fit_transform()`` of :class:`pyriemann.spatialfilters.AJDC` due to incompatible dimensions. :pr:`382` by :user:`qbarthelemy`
+
+- Add :class:`pyriemann.datasets.RandomOverSampler` for data augmentation of positive-definite matrices. :pr:`387` by :user:`qbarthelemy`
+
+- Add :func:`pyriemann.utils.tangentspace.transport` for parallel transport of positive-definite matrices. :pr:`388` by :user:`qbarthelemy`
+
+- Enhance :func:`pyriemann.datasets.make_matrices` to generate invertible, orthogonal, unitary or non-square matrices. :pr:`389` by :user:`qbarthelemy`
+
+- Deprecate ``mean_identity``. :pr:`392` by :user:`qbarthelemy`
+
+- Enhance :class:`pyriemann.tangentspace.TangentSpace` to support HPD matrices. :pr:`394` by :user:`qbarthelemy`
+
+- Speedup of the ALM mean :func:`pyriemann.utils.mean.mean_alm`. :pr:`398` by :user:`qbarthelemy`
+
+- Add :func:`pyriemann.utils.geodesic.geodesic_chol` and :func:`pyriemann.utils.mean.mean_chol`. :pr:`399` by :user:`qbarthelemy`
+
+- Add :func:`pyriemann.utils.tangentspace.transport_logchol` for parallel transport with log-Cholesky metric. :pr:`400` by :user:`qbarthelemy`
+
+- Add Thompson metric: :func:`pyriemann.utils.distance.distance_thompson`, :func:`pyriemann.utils.geodesic.geodesic_thompson`,
+  and :func:`pyriemann.utils.mean.mean_thompson`. :pr:`401` by :user:`qbarthelemy`
+
+- Fix sklearn error ``This Pipeline instance is not fitted yet``. :pr:`406` by :user:`qbarthelemy`
+
+- Add :class:`pyriemann.classification.NearestConvexHull`. :pr:`405` by :user:`qbarthelemy`
 
 v0.9 (July 2025)
 ----------------
@@ -25,7 +71,7 @@ v0.9 (July 2025)
 
 - Avoid duplicating code when using joblib. :pr:`359` by :user:`qbarthelemy`
 
-- Fix sklearn warning. :pr:`358` by :user:`qbarthelemy`
+- Fix sklearn warning ``This Pipeline instance is not fitted yet``. :pr:`358` by :user:`qbarthelemy`
 
 - Add :func:`pyriemann.utils.tangentspace.log_map` and :func:`pyriemann.utils.tangentspace.exp_map`. :pr:`363` by :user:`qbarthelemy`
 
@@ -39,7 +85,7 @@ v0.8 (February 2025)
 - Enhance :func:`pyriemann.utils.mean.mean_ale` adding ``init`` parameter,
   and add function ``check_init()`` useful to all ajd and mean functions allowing initialization. :pr:`328` by :user:`qbarthelemy`
 
-- Enhance :func:`pyriemann.utils.mean.mean_covariance` to support "power" and "poweuclid" metrics. :pr:`329` by :user:`qbarthelemy`
+- Enhance ``mean_covariance`` to support "power" and "poweuclid" metrics. :pr:`329` by :user:`qbarthelemy`
 
 - Add tangent space alignment (TSA) in transfer learning module.
   ``TLStretch`` is deprecated and renamed into :class:`pyriemann.transfer._estimators.TLScale`,
@@ -144,7 +190,7 @@ v0.5 (Jun 2023)
 
 - Fix :func:`pyriemann.utils.distance.pairwise_distance` for non-symmetric metrics. :pr:`229` by :user:`qbarthelemy`
 
-- Fix :func:`pyriemann.utils.mean.mean_covariance` used with keyword arguments. :pr:`230` by :user:`qbarthelemy`
+- Fix ``mean_covariance`` used with keyword arguments. :pr:`230` by :user:`qbarthelemy`
 
 - Add functions to test HPD and HPSD matrices, :func:`pyriemann.utils.test.is_herm_pos_def` and :func:`pyriemann.utils.test.is_herm_pos_semi_def`. :pr:`231` by :user:`qbarthelemy`
 
@@ -216,7 +262,7 @@ v0.3 (July 2022)
 
 - Deprecate ``pyriemann.utils.viz.plot_confusion_matrix`` as sklearn integrate its own version. :pr:`135` by :user:`sylvchev`
 
-- Add Ando-Li-Mathias mean estimation in :func:`pyriemann.utils.mean.mean_covariance`. :pr:`56` by :user:`sylvchev`
+- Add Ando-Li-Mathias (ALM) mean in :func:`pyriemann.utils.mean.mean_alm`. :pr:`56` by :user:`sylvchev`
 
 - Add Schaefer-Strimmer covariance estimator in :func:`pyriemann.utils.covariance.covariances`, and an example to compare estimators :pr:`59` by :user:`sylvchev`
 

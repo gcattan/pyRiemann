@@ -1,43 +1,41 @@
+import matplotlib
 import numpy as np
 import pytest
 
-from conftest import requires_matplotlib
 from pyriemann.utils.viz import (
     plot_embedding,
     plot_cospectra,
     plot_waveforms
 )
 
+matplotlib.use("Agg")
 
-@requires_matplotlib
+
 def test_embedding(get_mats):
-    """Test ."""
     n_matrices, n_channels = 5, 3
-    mats = get_mats(n_matrices, n_channels, "spd")
-    plot_embedding(mats, y=None, metric="euclid")
-    y = np.ones(mats.shape[0])
-    plot_embedding(mats, y=y, metric="euclid")
+    X = get_mats(n_matrices, n_channels, "spd")
+    plot_embedding(X, y=None, metric="euclid")
+
+    y = np.ones(n_matrices)
+    plot_embedding(X, y=y, metric="euclid")
 
 
-@requires_matplotlib
 def test_embedding_error_raise(get_mats):
     """Test ValueError for unknown embedding type."""
     n_matrices, n_channels = 5, 3
-    mats = get_mats(n_matrices, n_channels, "spd")
+    X = get_mats(n_matrices, n_channels, "spd")
     with pytest.raises(ValueError):
-        plot_embedding(mats, y=None, metric="euclid", embd_type="foo")
+        plot_embedding(X, y=None, metric="euclid", embd_type="foo")
 
 
-@requires_matplotlib
 def test_cospectra():
     """Test plot_cospectra"""
     n_freqs, n_channels = 16, 3
-    cosp = np.random.randn(n_freqs, n_channels, n_channels)
+    X = np.random.randn(n_freqs, n_channels, n_channels)
     freqs = np.random.randn(n_freqs)
-    plot_cospectra(cosp, freqs)
+    plot_cospectra(X, freqs)
 
 
-@requires_matplotlib
 @pytest.mark.parametrize("display", ["all", "mean", "mean+/-std", "hist"])
 def test_plot_waveforms(display):
     """Test plot_waveforms"""

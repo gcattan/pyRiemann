@@ -15,10 +15,7 @@ from sklearn.pipeline import Pipeline
 from pyriemann.clustering import Kmeans
 from pyriemann.estimation import Covariances
 from helpers.datasets_helpers import download_salinas, read_salinas
-from helpers.processing_helpers import (
-    SlidingWindowVectorize,
-    PCAImage,
-)
+from helpers.processing_helpers import PCAImage, SlidingWindowVectorize
 
 
 ###############################################################################
@@ -26,7 +23,6 @@ from helpers.processing_helpers import (
 # ----------
 
 window_size = 5
-data_path = "./data"
 n_jobs = -1
 max_iter = 100
 small_dataset = True  # Whole image can take time
@@ -38,8 +34,8 @@ estimator = "scm"  # Chose any estimator from "scm", "lwf", "oas", "mcd", "hub"
 # ---------
 
 print("Loading Salinas data")
-download_salinas(data_path)
-data, labels, labels_names = read_salinas(data_path)
+download_salinas()
+data, labels, labels_names = read_salinas()
 data_visualization = data.copy()  # To avoid aliasing when showing data
 n_clusters = len(labels_names)
 
@@ -62,13 +58,11 @@ x_values = np.arange(window_size//2, width-window_size//2) * resolution
 y_values = np.arange(window_size//2, height-window_size//2) * resolution
 X_res, Y_res = np.meshgrid(x_values, y_values)
 
-print("Reading done.")
 
 ###############################################################################
 # Print configuration
 # -------------------
 
-print("-"*80)
 print(f"Size of dataset: {data.shape}")
 print(f"n_clusters = {n_clusters}")
 print(f"window_size = {window_size}")
@@ -76,7 +70,6 @@ print(f"n_components = {n_components}")
 print(f"n_jobs = {n_jobs}")
 print(f"max_iter = {max_iter}")
 print(f"estimator = {estimator}")
-print("-"*80)
 
 ###############################################################################
 # Pipelines definition
@@ -126,13 +119,11 @@ for pipeline_name, pipeline in zip(pipelines_names, pipelines):
     results[pipeline_name] = \
         pipeline.named_steps["sliding_window"].inverse_predict(preds)
     print("-"*60)
-print("Done")
 
 ###############################################################################
 # Plot data
 # ---------
 
-print("Plotting")
 plot_value = np.mean(data_visualization, axis=2)
 figure, ax = plt.subplots(figsize=(7, 5))
 plt.pcolormesh(X_image, Y_image, plot_value, cmap="gray")
