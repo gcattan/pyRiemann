@@ -1,0 +1,21 @@
+doc/whatsnew.rst
+  s_64d1bc3e86d3e4::t_a279ab819368dd 16-20
+tests/test_transfer.py
+  s_64d1bc3e86d3e4::t_5b5b353df928fc 219,278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2c09ec36b30d0254e24c1b7ab3c5d0eaf9d19974",
+  "prompts": {},
+  "sessions": {
+    "s_64d1bc3e86d3e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14c5eee5-cd14-43ae-a054-f523935ee086",
+        "model": "unknown"
+      },
+      "human_author": "Gregoire CATTAN <gregoire.cattan@ibm.com>"
+    }
+  }
+}
