@@ -1,0 +1,23 @@
+doc/whatsnew.rst
+  s_64d1bc3e86d3e4::t_63e6a7445102c6 13-18
+tests/test_transfer.py
+  s_64d1bc3e86d3e4::t_4c2de1132c92db 208-230,265-286
+pyriemann/transfer/_estimators.py
+  s_64d1bc3e86d3e4::t_5fd591e9a14ae3 131-132,139-147,153,160-161,174-178,181,185,239-240,256-260,271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "56e2759eb23a32ff95ce422446b79ea85755e0ec",
+  "prompts": {},
+  "sessions": {
+    "s_64d1bc3e86d3e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14c5eee5-cd14-43ae-a054-f523935ee086",
+        "model": "unknown"
+      },
+      "human_author": "Gregoire CATTAN <gregoire.cattan@ibm.com>"
+    }
+  }
+}
