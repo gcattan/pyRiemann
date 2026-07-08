@@ -1,0 +1,19 @@
+tests/test_transfer.py
+  s_64d1bc3e86d3e4::t_1ae099ce46846f 132-134,166-174,179,218-220,236,249-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ab0de6b9d73060fabbc03ac6c3bc9e05db0e080a",
+  "prompts": {},
+  "sessions": {
+    "s_64d1bc3e86d3e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14c5eee5-cd14-43ae-a054-f523935ee086",
+        "model": "unknown"
+      },
+      "human_author": "Gregoire CATTAN <gregoire.cattan@ibm.com>"
+    }
+  }
+}
