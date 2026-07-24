@@ -23,6 +23,9 @@ v0.13.dev
   had the same meaning).
   :pr:`464` by :user:`gcattan` and :user:`aquemy`
 
+- Add Wasserstein inner product for Hermitian matrices :func:`pyriemann.geometry.tangentspace.innerproduct_wasserstein`.
+  :pr:`455` by :user:`qbarthelemy`
+
 v0.12 (July 2026)
 -----------------
 
