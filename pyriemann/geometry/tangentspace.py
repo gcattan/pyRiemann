@@ -1,6 +1,7 @@
 """Tangent space for SPD/HPD matrices."""
 
 import math
+import numbers
 
 from array_api_compat import (
     array_namespace as get_namespace,
@@ -986,10 +987,10 @@ def innerproduct_wasserstein(X, Y, Cref):
         pp. 165-191.
     """
     xp = check_matrix_pair(X, Cref, require_square=True)
-    LX = xp.asarray(solve_continuous_lyapunov(Cref, xp.conj(X)))
+    LX = xp.asarray(solve_continuous_lyapunov(Cref, X))
     if Y is None:
         Y = X
-    G = 0.5 * xp.einsum("...ij,...ij->...", LX, Y).real
+    G = 0.5 * xp.einsum("...ij,...ji->...", LX, Y).real
     return _prepare_output(G, xp)
 
 
@@ -1311,15 +1312,107 @@ def transport_riemann(X, A, B):
     return X_new
 
 
+def transport_wasserstein(X, A, B, n_steps=50):
+    r"""Parallel transport for Wasserstein metric.
+
+    The parallel transport of matrices :math:`\mathbf{X}` in tangent space
+    from an initial SPD/HPD matrix :math:`\mathbf{A}` to a final SPD/HPD
+    matrix :math:`\mathbf{B}` according to the Levi-Civita connection of the
+    Bures-Wasserstein metric, described in Section 7.5 of [1]_.
+
+    Bures-Wasserstein parallel transport is defined by a linear ordinary
+    differential equation along the Wasserstein geodesic [1]_, integrated here
+    with a fixed-step Runge-Kutta scheme of order 4. When :math:`\mathbf{A}`
+    and :math:`\mathbf{B}` commute, a closed form is available [2]_.
+
+    Warning: this function must be applied to matrices :math:`\mathbf{X}`
+    already projected in tangent space with a logarithmic map at
+    :math:`\mathbf{A}`, not to SPD/HPD matrices in manifold.
+
+    Parameters
+    ----------
+    X : ndarray, shape (..., n, n)
+        Symmetric/Hermitian matrices in tangent space at A.
+    A : ndarray, shape (n, n)
+        Initial SPD/HPD matrix.
+    B : ndarray, shape (n, n)
+        Final SPD/HPD matrix.
+    n_steps : int, default=50
+        Number of Runge-Kutta steps used to integrate the transport equation.
+        Must be a positive integer. More steps are needed the further the
+        transport map between A and B is from identity, at a cost linear in
+        ``n_steps``.
+
+    Returns
+    -------
+    X_new : ndarray, shape (..., n, n)
+        Matrices in tangent space transported from A to B.
+
+    Notes
+    -----
+    .. versionadded:: 0.13
+
+    See Also
+    --------
+    transport
+
+    References
+    ----------
+    .. [1] `Wasserstein Riemannian geometry of Gaussian densities
+        <https://link.springer.com/article/10.1007/s41884-018-0014-4>`_
+        L. Malagò, L. Montrucchio, G. Pistone. Information Geometry, 2018, 1,
+        pp. 137–179.
+    .. [2] `O(n)-invariant Riemannian metrics on SPD matrices
+        <https://www.sciencedirect.com/science/article/pii/S0024379522004360>`_
+        Y. Thanwerdas & X. Pennec. Linear Algebra and its Applications, 2023.
+    """
+    if not isinstance(n_steps, numbers.Integral) or n_steps < 1:
+        raise ValueError(
+            f"n_steps must be a positive integer, got {n_steps!r}."
+        )
+    xp = get_namespace(X, A, B)
+    n = A.shape[-1]
+    eye = xp.eye(n, dtype=A.dtype, device=xpd(A))
+
+    A12, A12inv = sqrtm(A), invsqrtm(A)
+    T = A12inv @ sqrtm(A12 @ B @ A12) @ A12inv
+    T = (T + ctranspose(T)) / 2
+    K = T - eye
+    AK, KA = A @ K, K @ A
+
+    # generator of the transported field: X0(t) solves X0 gamma + gamma X0 = X
+    X0 = xp.asarray(solve_continuous_lyapunov(A, X))
+
+    def _deriv(t, X0):
+        Mt = (1 - t) * eye + t * T
+        gamma = Mt @ A @ Mt
+        rhs = Mt @ AK @ X0 + X0 @ KA @ Mt
+        rhs = (rhs + ctranspose(rhs)) / 2
+        return -xp.asarray(solve_continuous_lyapunov(gamma, rhs))
+
+    h = 1 / n_steps
+    for i in range(n_steps):
+        t = i * h
+        k1 = _deriv(t, X0)
+        k2 = _deriv(t + h / 2, X0 + (h / 2) * k1)
+        k3 = _deriv(t + h / 2, X0 + (h / 2) * k2)
+        k4 = _deriv(t + h, X0 + h * k3)
+        X0 = X0 + (h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+    X_new = B @ X0 + X0 @ B
+    return (X_new + ctranspose(X_new)) / 2
+
+
 transport_functions = {
     "euclid": transport_euclid,
     "logchol": transport_logchol,
     "logeuclid": transport_logeuclid,
     "riemann": transport_riemann,
+    "wasserstein": transport_wasserstein,
 }
 
 
-def transport(X, A, B, metric="riemann"):
+def transport(X, A, B, metric="riemann", **kwargs):
     r"""Parallel transport according to a specified metric.
 
     Parallel transport of matrices :math:`\mathbf{X}` in tangent space
@@ -1340,8 +1433,13 @@ def transport(X, A, B, metric="riemann"):
         Final SPD/HPD matrix.
     metric : string | callable, default="riemann"
         Metric used for parallel transport, can be:
-        "euclid", "logchol", "logeuclid", "riemann",
+        "euclid", "logchol", "logeuclid", "riemann", "wasserstein",
         or a callable function.
+    **kwargs : dict
+        Keyword arguments passed to the metric-specific transport function,
+        e.g. ``n_steps`` for the "wasserstein" metric.
+
+        .. versionadded:: 0.13
 
     Returns
     -------
@@ -1353,6 +1451,8 @@ def transport(X, A, B, metric="riemann"):
     .. versionadded:: 0.10
     .. versionchanged:: 0.12
         Add support for NumPy and PyTorch.
+    .. versionchanged:: 0.13
+        Add ``**kwargs`` forwarded to the metric-specific function.
 
     See Also
     --------
@@ -1360,6 +1460,7 @@ def transport(X, A, B, metric="riemann"):
     transport_logchol
     transport_logeuclid
     transport_riemann
+    transport_wasserstein
     """
     transport_function = check_function(metric, transport_functions)
-    return transport_function(X, A, B)
+    return transport_function(X, A, B, **kwargs)

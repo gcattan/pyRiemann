@@ -26,6 +26,10 @@ v0.13.dev
 - Add Wasserstein inner product for Hermitian matrices :func:`pyriemann.geometry.tangentspace.innerproduct_wasserstein`.
   :pr:`455` by :user:`qbarthelemy`
 
+- Add :func:`pyriemann.geometry.tangentspace.transport_wasserstein` for parallel
+  transport with the Bures-Wasserstein metric.
+  :pr:`476` by :user:`AmitSubhash`
+
 v0.12 (July 2026)
 -----------------
 
