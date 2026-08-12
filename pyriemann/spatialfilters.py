@@ -307,8 +307,8 @@ class CSP(BilinearFilter):
         If true, return the log variance, otherwise return the spatially
         filtered covariance matrices.
     ajd_method : string | callable, default="ajd_pham"
-        Method for AJD, can be: "ajd_pham", "rjd", "uwedge", or a callable
-        function.
+        Method for AJD for multiclass CSP, can be:
+        "ajd_pham", "jade", "uwedge", or a callable function.
 
         .. versionadded:: 0.7
 

@@ -6,6 +6,7 @@ from array_api_compat import array_namespace as get_namespace, device as xpd
 
 from ._backend import _add_to_diagonal
 from ._check import check_function, check_init, check_weights
+from ._docs import deprecated
 
 
 def _arange(*args):
@@ -20,7 +21,7 @@ def _reshape_output(X, n1, n2, xp):
     return xp.permute_dims(xp.reshape(X, (n1, n2, n1)), (1, 0, 2))
 
 
-def rjd(X, *, init=None, eps=1e-8, n_iter_max=100):
+def jade(X, *, init=None, eps=1e-8, n_iter_max=100):
     """Approximate joint diagonalization based on JADE.
 
     This is an implementation of the orthogonal AJD algorithm [1]_: joint
@@ -35,6 +36,8 @@ def rjd(X, *, init=None, eps=1e-8, n_iter_max=100):
         Set of symmetric matrices to diagonalize.
     init : None | ndarray, shape (n, n), default=None
         Initialization for the diagonalizer.
+
+        .. versionadded:: 0.4
     eps : float, default=1e-8
         Tolerance for stopping criterion.
     n_iter_max : int, default=100
@@ -45,13 +48,17 @@ def rjd(X, *, init=None, eps=1e-8, n_iter_max=100):
     V : ndarray, shape (n, n)
         The diagonalizer, an orthogonal matrix.
     D : ndarray, shape (n_matrices, n, n)
-        Set of quasi diagonal matrices, D = V^T X V.
+        Set of quasi diagonal matrices, D = V X V^T.
 
     Notes
     -----
     .. versionadded:: 0.2.4
+    .. versionchanged:: 0.4
+        Add parameter init.
     .. versionchanged:: 0.12
         Add support for NumPy and PyTorch.
+    .. versionchanged:: 0.13
+        Rename rjd into jade, and transpose outputed diagonalizer.
 
     See Also
     --------
@@ -112,7 +119,15 @@ def rjd(X, *, init=None, eps=1e-8, n_iter_max=100):
         warnings.warn("Convergence not reached")
 
     D = _reshape_output(A, n, n_matrices, xp)
-    return V, D
+    return V.mT, D
+
+
+@deprecated(
+    "rjd() is deprecated and will be removed in 0.15.0; please use jade()."
+    "Be careful, outputed diagonalizer is transposed."
+)
+def rjd(X, *, init=None, eps=1e-8, n_iter_max=100):
+    return jade(X, init=init, eps=eps, n_iter_max=n_iter_max)
 
 
 def ajd_pham(X, *, init=None, eps=1e-6, n_iter_max=20, sample_weight=None):
@@ -149,6 +164,10 @@ def ajd_pham(X, *, init=None, eps=1e-6, n_iter_max=20, sample_weight=None):
     Notes
     -----
     .. versionadded:: 0.2.4
+    .. versionchanged:: 0.2.7
+        Add parameter sample_weight.
+    .. versionchanged:: 0.4
+        Add parameter init.
     .. versionchanged:: 0.7
         Add support for HPD matrices.
     .. versionchanged:: 0.12
@@ -353,6 +372,7 @@ def uwedge(X, *, init=None, eps=1e-7, n_iter_max=100):
 ajd_functions = {
     "ajd_pham": ajd_pham,
     "rjd": rjd,
+    "jade": jade,
     "uwedge": uwedge,
 }
 
@@ -368,7 +388,7 @@ def ajd(X, method="ajd_pham", init=None, eps=1e-6, n_iter_max=100, **kwargs):
     X : ndarray, shape (n_matrices, n, n)
         Set of symmetric matrices to diagonalize.
     method : string | callable, default="ajd_pham"
-        Method for AJD, can be: "ajd_pham", "rjd", "uwedge", or a callable
+        Method for AJD, can be: "ajd_pham", "jade", "uwedge", or a callable
         function.
     init : None | ndarray, shape (n, n), default=None
         Initialization for the diagonalizer.
@@ -384,7 +404,7 @@ def ajd(X, method="ajd_pham", init=None, eps=1e-6, n_iter_max=100, **kwargs):
     V : ndarray, shape (n, n)
         The diagonalizer.
     D : ndarray, shape (n_matrices, n, n)
-        Set of quasi diagonal matrices.
+        Set of quasi diagonal matrices, D = V X V^T.
 
     Notes
     -----
@@ -393,7 +413,7 @@ def ajd(X, method="ajd_pham", init=None, eps=1e-6, n_iter_max=100, **kwargs):
     See Also
     --------
     ajd_pham
-    rjd
+    jade
     uwedge
 
     References

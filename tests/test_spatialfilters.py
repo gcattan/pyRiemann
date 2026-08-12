@@ -2,6 +2,7 @@ import numpy as np
 from numpy.testing import assert_array_equal
 import pytest
 
+from pyriemann.geometry.ajd import jade
 from pyriemann.spatialfilters import Xdawn, CSP, SPoC, BilinearFilter, AJDC
 
 
@@ -171,7 +172,7 @@ def test_xdawn_baselinecov(n_channels, use_baseline_cov, get_mats, get_labels):
 @pytest.mark.parametrize("n_filters", [3, 4, 5])
 @pytest.mark.parametrize("metric", ["euclid", "logeuclid", "riemann"])
 @pytest.mark.parametrize("log", [True, False])
-@pytest.mark.parametrize("ajd_method", ["ajd_pham", "rjd", "uwedge"])
+@pytest.mark.parametrize("ajd_method", ["ajd_pham", "jade", "uwedge"])
 def test_csp(n_filters, metric, log, ajd_method, get_mats, get_labels):
     n_classes, n_matrices, n_channels = 2, 6, 4
     X = get_mats(n_matrices, n_channels, "spd")
@@ -188,6 +189,29 @@ def test_csp(n_filters, metric, log, ajd_method, get_mats, get_labels):
         assert Xtr.shape == (n_matrices, n_components)
     else:
         assert Xtr.shape == (n_matrices, n_components, n_components)
+
+
+@pytest.mark.parametrize("ajd_method", ["ajd_pham", "jade", "uwedge", jade])
+def test_csp_multiclass(ajd_method, get_mats_params, get_labels):
+    """Multiclass CSP filters must jointly diagonalize the class covariances"""
+    n_classes, n_matrices, n_channels = 3, 30, 4
+    # matrices sharing a common eigenbasis are exactly jointly diagonalizable,
+    # so any off-diagonal residual is a convention error, not an approximation
+    X = get_mats_params(n_matrices, n_channels, "spd")[0]
+    y = get_labels(n_matrices, n_classes)
+
+    csp = CSP(
+        nfilter=n_channels, metric="euclid", log=False, ajd_method=ajd_method
+    ).fit(X, y)
+    filters = csp.filters_
+    assert filters.shape == (n_channels, n_channels)
+
+    for c in np.unique(y):
+        cov = np.mean(X[y == c], axis=0)  # euclidean class mean
+        filt_cov = filters @ cov @ filters.T
+        offdiag = filt_cov - np.diag(np.diag(filt_cov))
+        ratio = np.sqrt(np.sum(offdiag ** 2) / np.sum(np.diag(filt_cov) ** 2))
+        assert ratio < 1e-4
 
 
 def test_bilinearfilter_errors(get_mats, get_labels):

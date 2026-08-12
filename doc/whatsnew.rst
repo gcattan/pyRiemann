@@ -30,6 +30,9 @@ v0.13.dev
   transport with the Bures-Wasserstein metric.
   :pr:`476` by :user:`AmitSubhash`
 
+- Deprecate ``rjd`` renamed into :func:`pyriemann.geometry.ajd.jade`, and transpose outputed diagonalizer.
+  :pr:`474` by :user:`gaoflow`
+
 v0.12 (July 2026)
 -----------------
 
@@ -429,7 +432,7 @@ v0.4 (Feb 2023)
   then used for ``transform()`` as well as for ``inverse_transform()``.
   :pr:`195` by :user:`qbarthelemy`
 
-- Enhance AJD: add ``init`` to :func:`pyriemann.geometry.ajd.ajd_pham` and :func:`pyriemann.geometry.ajd.rjd`,
+- Enhance AJD: add ``init`` to :func:`pyriemann.geometry.ajd.ajd_pham` and :func:`pyriemann.geometry.ajd.jade`,
   add ``warm_restart`` to :class:`pyriemann.spatialfilters.AJDC`.
   :pr:`196` by :user:`qbarthelemy`
 

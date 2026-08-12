@@ -392,7 +392,7 @@ on SPD/HPD matrices, and
          <span class="api-card-tag tag-geometry">Geometry</span>
        </div>
        <div class="api-card-title">Approx. Joint Diag.</div>
-       <div class="api-card-desc">Pham, RJD, and UWEDGE algorithms for joint diagonalization.</div>
+       <div class="api-card-desc">Pham's AJD, JADE, and UWEDGE algorithms for joint diagonalization.</div>
        <div class="api-card-footer">4 functions</div>
      </a>
 
@@ -854,7 +854,7 @@ Aproximate Joint Diagonalization
 
     ajd
     ajd_pham
-    rjd
+    jade
     uwedge
 
 .. _mat_test_api:

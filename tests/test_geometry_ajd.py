@@ -3,14 +3,14 @@ import numpy as np
 import pytest
 
 from conftest import approx, assert_array_equal
-from pyriemann.geometry.ajd import ajd, rjd, ajd_pham, uwedge
+from pyriemann.geometry.ajd import ajd, ajd_pham, jade, rjd, uwedge
 
 
 @pytest.mark.parametrize("kind", ["sym", "spd"])
 @pytest.mark.parametrize(
     "method, algo",
     [
-        ("rjd", rjd),
+        ("jade", jade),
         ("ajd_pham", ajd_pham),
         ("uwedge", uwedge),
         (uwedge, uwedge),
@@ -29,19 +29,18 @@ def test_ajd(kind, method, algo, get_mats):
     assert D.shape == (n_matrices, n_channels, n_channels)
 
     xp = get_namespace(X)
-    if method == "rjd":
-        assert D == approx(V.mT @ X @ V)
+    assert D == approx(V @ X @ V.mT)
+    if method == "jade":  # check diagonalizer orthogonality
         eye = xp.eye(n_channels, dtype=X.dtype, device=xpd(X))
-        assert V.mT @ V == approx(eye)  # check orthogonality
-    else:
-        assert D == approx(V @ X @ V.mT)
+        assert V.mT @ V == approx(eye)
+        assert V @ V.mT == approx(eye)
 
     V_, D_ = algo(X, eps=eps, n_iter_max=n_iter_max)
     assert_array_equal(V, V_)
     assert_array_equal(D, D_)
 
 
-@pytest.mark.parametrize("method", ["rjd", "ajd_pham", "uwedge"])
+@pytest.mark.parametrize("method", ["ajd_pham", "jade", "uwedge"])
 @pytest.mark.parametrize("use_init", [True, False])
 def test_ajd_init(method, use_init, get_mats_params):
     """Test init for ajd algos"""
@@ -104,3 +103,12 @@ def test_ajdpham_weight_zero(kind, get_mats, get_weights):
     Vw, Dw = ajd_pham(X, sample_weight=weights)
     assert V == approx(Vw, rel=1e-4, abs=1e-8)
     assert D == approx(Dw[1:], rel=1e-4, abs=1e-8)
+
+
+def test_rjd_deprecation(get_mats):
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        rjd(get_mats(3, 2, "spd"))
+        assert len(w) >= 1
+        assert issubclass(w[-1].category, DeprecationWarning)
