@@ -1,7 +1,6 @@
 """Geodesics for SPD/HPD matrices."""
 
 from array_api_compat import array_namespace as get_namespace
-from array_api_extra import expand_dims
 
 from ._backend import diag_indices, tril_indices
 from ._check import check_function, check_matrix_pair
@@ -26,7 +25,7 @@ def _check_alpha(alpha, X, axis=(-2, -1)):
             raise ValueError(
                 f"alpha must have shape {expected_shape}, got {alpha.shape}."
             )
-        alpha = expand_dims(alpha, axis=axis)
+        alpha = xpa.expand_dims(alpha, axis=axis)
     else:
         raise ValueError(
             f"alpha must be a float or an array, got {type(alpha)}."

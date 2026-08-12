@@ -2,7 +2,6 @@ from functools import wraps
 import warnings
 
 from array_api_compat import array_namespace as get_namespace, device as xpd
-from array_api_extra import expand_dims
 from scipy.stats import chi2
 
 from ._backend import (
@@ -317,7 +316,7 @@ def covariance_sch(X):
                  xp.sum(var_R, axis=(-2, -1)) / R2_sum),
         0, 1,
     )
-    gamma = expand_dims(gamma, axis=(-2, -1))
+    gamma = xp.expand_dims(gamma, axis=(-2, -1))
 
     sigma = (1. - gamma) * (n_times / (n_times - 1.)) * C_scm
 
@@ -971,7 +970,7 @@ def normalize(X, norm):
 
     if norm == "corr":
         stddev = xp.sqrt(xp.abs(xp.linalg.diagonal(X)))
-        denom = expand_dims(stddev, axis=-2) * stddev[..., None]
+        denom = xp.expand_dims(stddev, axis=-2) * stddev[..., None]
     elif norm == "trace":
         denom = xp.linalg.trace(X)
     elif norm == "determinant":
@@ -979,7 +978,7 @@ def normalize(X, norm):
     else:
         raise ValueError(f"{norm} is not a supported normalization")
 
-    denom = expand_dims(denom, axis=tuple(range(denom.ndim, X.ndim)))
+    denom = xp.expand_dims(denom, axis=tuple(range(denom.ndim, X.ndim)))
     Xn = X / denom
 
     if norm == "corr":
