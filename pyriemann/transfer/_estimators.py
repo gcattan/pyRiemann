@@ -381,10 +381,6 @@ class TLScale(TransformerMixin, BaseEstimator):
         .. versionchanged:: 0.8
             Rename ``dispersions_`` into ``scales_``.
 
-    See Also
-    --------
-    TLCenter
-
     Notes
     -----
     .. versionadded:: 0.4
@@ -393,6 +389,10 @@ class TLScale(TransformerMixin, BaseEstimator):
     .. versionchanged:: 0.8
         Rename ``TLStretch`` into ``TLScale``.
         Add support for tangent space scaling.
+
+    See Also
+    --------
+    TLCenter
 
     References
     ----------
@@ -643,10 +643,6 @@ class TLRotate(TransformerMixin, BaseEstimator):
     rotations_ : dict
         Dictionary with key=domain_name and value=domain_rotation_matrix.
 
-    See Also
-    --------
-    TLCenter
-
     Notes
     -----
     .. versionadded:: 0.4
@@ -657,6 +653,10 @@ class TLRotate(TransformerMixin, BaseEstimator):
         Add support for multisource domains in tangent space.
     .. versionchanged:: 0.11
         Add parameters ``tol_step`` and ``maxiter``.
+
+    See Also
+    --------
+    TLCenter
 
     References
     ----------
@@ -1064,7 +1064,7 @@ class TLClassifier(TLEstimator):
 
     See Also
     --------
-    TLRegressor
+    MDWM
 
     Notes
     -----
@@ -1148,10 +1148,6 @@ class TLRegressor(TLEstimator):
         Weights to combine data from each domain to train the regressor.
         The dict contains key=domain_name and value=weight_to_assign.
         If None, it uses equal weights.
-
-    See Also
-    --------
-    TLClassifier
 
     Notes
     -----
@@ -1250,9 +1246,13 @@ class MDWM(MDM):
         .. versionchanged:: 0.6
             Change list of ndarrays into a ndarray.
 
+    Notes
+    -----
+    .. versionadded:: 0.4
+
     See Also
     --------
-    MDM
+    :class:`pyriemann.classification.MDM`
 
     References
     ----------
@@ -1267,10 +1267,6 @@ class MDWM(MDM):
         S. Khazem, S. Chevallier, Q. Barthelemy, K. Haroun and C. Nous, 10th
         International IEEE/EMBS Conference on Neural Engineering (NER), pp.
         523-526. IEEE, 2021.
-
-    Notes
-    -----
-    .. versionadded:: 0.4
     """
 
     def __init__(
@@ -1359,7 +1355,7 @@ class MDWM(MDM):
         return self
 
     def score(self, X, y_enc, sample_weight=None):
-        """Return the mean accuracy on the given test data and labels.
+        """Return the mean accuracy on the given test matrices and labels.
 
         Parameters
         ----------
