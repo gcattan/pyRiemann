@@ -50,6 +50,11 @@ v0.13.dev
 - Enhance :class:`pyriemann.channelselection.ElectrodeSelection` to support HPD matrices.
   :pr:`489` by :user:`qbarthelemy`
 
+- Fix ``fit_transform()`` of :class:`pyriemann.transfer.TLScale`, which
+  modified the input matrices in-place, so that two identical calls on the
+  same array returned different outputs.
+  :pr:`482` by :user:`adityasingh2400`
+
 v0.12 (July 2026)
 -----------------
 

@@ -113,6 +113,30 @@ def test_tlsplitter(rndstate, cv):
 ###############################################################################
 
 
+@pytest.mark.parametrize("estimator", [TLCenter, TLScale, TLRotate])
+@pytest.mark.parametrize("use_vectors", [True, False])
+def test_tltransformer_fittransform(estimator, use_vectors, rndstate):
+    """Test that fit_transform does not modify the inputs"""
+    if use_vectors:
+        X, y_enc = make_classification_transfer_tangspace(
+            rndstate, ["tgt", "src"], n_vectors_d=20, n_ts=4,
+        )
+    else:
+        X, y_enc = make_classification_transfer(
+            n_matrices=20, random_state=rndstate,
+            domain_names=["tgt", "src"]
+        )
+    X_copy = X.copy()
+
+    # calling fit_transform does not modify inputs
+    X_new = estimator(target_domain="tgt").fit_transform(X, y_enc)
+    assert_array_equal(X, X_copy)
+
+    # calling fit_transform twice on the same inputs gives the same outputs
+    X_new2 = estimator(target_domain="tgt").fit_transform(X, y_enc)
+    assert_array_equal(X_new, X_new2)
+
+
 @pytest.mark.parametrize("space", ["manifold", "tangentspace"])
 def test_tldummy(rndstate, space):
     X, y_enc = make_classification_transfer(

@@ -563,12 +563,13 @@ class TLScale(TransformerMixin, BaseEstimator):
             idx = domains == d
 
             if X.ndim == 3:
+                X_d = X[idx]
                 if not self.centered_data:  # re-center matrices to identity
-                    X[idx] = self._center(X[idx], self._means[d])
+                    X_d = self._center(X_d, self._means[d])
 
                 # stretch
                 X_new[idx] = self._strech(
-                    X[idx], self.scales_[d], self.final_dispersion
+                    X_d, self.scales_[d], self.final_dispersion
                 )
 
                 if not self.centered_data:  # re-center back to previous mean
