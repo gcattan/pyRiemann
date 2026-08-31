@@ -369,6 +369,24 @@ def test_mean_geometric_2mats(kind, mean, get_mats):
 
 
 @pytest.mark.parametrize("kind", ["spd", "hpd"])
+@pytest.mark.parametrize("mean", [
+    mean_alm,
+    mean_bmp,
+    mean_riemann,
+])
+@pytest.mark.parametrize("weights", [[3, 1], [1, 3], [1, 9]])
+def test_mean_geometric_2mats_weighted(kind, mean, weights, get_mats):
+    """Weighted geometric mean of 2 matrices is on the AIR geodesic"""
+    n_matrices, n_channels = 2, 3
+    X = get_mats(n_matrices, n_channels, kind)
+    weights = np.array(weights, dtype=float)
+    alpha = weights[1] / np.sum(weights)
+
+    M = mean(X, sample_weight=weights)
+    assert M == approx(geodesic_riemann(X[0], X[1], alpha=alpha))
+
+
+@pytest.mark.parametrize("kind", ["spd", "hpd"])
 @pytest.mark.parametrize("mean", [mean_alm, mean_bmp, mean_cheap])
 def test_mean_geometric_3mats(kind, mean, get_mats):
     """Geometric mean of 3 matrices is the AIR mean"""

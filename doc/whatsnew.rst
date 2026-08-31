@@ -55,6 +55,10 @@ v0.13.dev
   same array returned different outputs.
   :pr:`482` by :user:`adityasingh2400`
 
+- Correct :func:`pyriemann.geometry.mean.mean_alm` and :func:`pyriemann.geometry.mean.mean_bmp`
+  for two matrices, which were using a wrong position on the geodesic when ``sample_weight`` is not uniform.
+  :pr:`480` by :user:`adityasingh2400`
+
 v0.12 (July 2026)
 -----------------
 

@@ -15,6 +15,15 @@ from .geodesic import geodesic_riemann, geodesic_thompson
 from .tangentspace import log_map_wasserstein, exp_map_wasserstein
 
 
+def _mean_riemann_2mats(X, sample_weight):
+    """Private function for weighted Riemannian mean of 2 matrices.
+
+    Weights are normalized, so the position on the geodesic from the
+    first to the second matrix is the weight of the second one.
+    """
+    return geodesic_riemann(X[0], X[1], alpha=sample_weight[1])
+
+
 @_vectorize_nd(n_axes=3)
 def mean_ale(X, *, tol=10e-7, maxiter=50, sample_weight=None, init=None):
     """AJD-based log-Euclidean (ALE) mean of SPD/HPD matrices.
@@ -150,9 +159,7 @@ def mean_alm(X, *, tol=1e-14, maxiter=100, sample_weight=None):
         return X[0]
 
     if n_matrices == 2:
-        alpha = sample_weight[1] / sample_weight[0] / 2
-        M = geodesic_riemann(X[0], X[1], alpha=alpha)
-        return M
+        return _mean_riemann_2mats(X, sample_weight)
 
     M = X
     M_iter = xp.zeros_like(M)
@@ -218,9 +225,7 @@ def mean_bmp(X, *, tol=1e-7, maxiter=50, sample_weight=None):
         return X[0]
 
     if n_matrices == 2:
-        alpha = sample_weight[1] / sample_weight[0] / 2
-        M = geodesic_riemann(X[0], X[1], alpha=alpha)
-        return M
+        return _mean_riemann_2mats(X, sample_weight)
 
     M = X
     M_iter = xp.zeros_like(M)
@@ -286,8 +291,7 @@ def mean_cheap(X, *, tol=1e-7, maxiter=50, **kwargs):
         return X[0]
 
     if n_matrices == 2:
-        M = geodesic_riemann(X[0], X[1], alpha=0.5)
-        return M
+        return geodesic_riemann(X[0], X[1], alpha=0.5)
 
     M = X
     M_iter = xp.zeros_like(M)
