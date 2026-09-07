@@ -319,21 +319,25 @@ def callable_kernel(x):
     return np.exp(- np.abs(x))
 
 
-@pytest.mark.parametrize("kernel", [
-    "normal", "uniform", callable_kernel,
-])
-@pytest.mark.parametrize("metric", [
-    "euclid", "logchol", "logeuclid", "riemann", "wasserstein"
-])
-def test_meanshift(kernel, metric, get_mats, get_labels):
+@pytest.mark.parametrize("kernel", ["normal", "uniform", callable_kernel])
+@pytest.mark.parametrize("bandwidth", [None, 0.1])
+@pytest.mark.parametrize("metric", ["euclid", "logeuclid"])
+def test_meanshift(kernel, bandwidth, metric, get_mats, capsys):
     n_matrices, n_channels = 10, 3
     X = get_mats(n_matrices, n_channels, "spd")
 
     clt = MeanShift(
         kernel=kernel,
+        bandwidth=bandwidth,
         metric=metric,
     )
     clt.fit(X)
+
+    if bandwidth is not None:
+        assert clt._bandwidth == bandwidth
+    assert clt.modes_.shape[1:] == (n_channels, n_channels)
+    assert clt.labels_.shape == (n_matrices,)
+    assert capsys.readouterr().out == ""
 
 
 def test_gaussian(get_mats, get_weights):

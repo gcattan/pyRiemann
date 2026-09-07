@@ -472,6 +472,8 @@ class MeanShift(SpdClustMixin, SpdTransfMixin, BaseEstimator):
         )
         if self.bandwidth is None:
             self._bandwidth = self._estimate_bandwidth(X, quantile=0.3)
+        else:
+            self._bandwidth = self.bandwidth
         self._bandwidth2 = self._bandwidth ** 2
 
         modes = Parallel(n_jobs=self.n_jobs)(
@@ -489,9 +491,7 @@ class MeanShift(SpdClustMixin, SpdTransfMixin, BaseEstimator):
         dist = pairwise_distance(X, None, metric=self._metric_dist)
         dist = np.triu(dist, 1)
         dist_sorted = np.sort(dist[dist > 0])
-        bandwidth = dist_sorted[floor(quantile * len(dist_sorted))]
-        print(f"MeanShift bandwidth={bandwidth:.3f}")
-        return bandwidth
+        return dist_sorted[floor(quantile * len(dist_sorted))]
 
     def _seek_mode(self, X, mean):
         for _ in range(self.max_iter):

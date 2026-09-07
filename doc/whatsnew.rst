@@ -59,6 +59,11 @@ v0.13.dev
   for two matrices, which were using a wrong position on the geodesic when ``sample_weight`` is not uniform.
   :pr:`480` by :user:`adityasingh2400`
 
+- Fix parameter ``bandwidth`` of :class:`pyriemann.clustering.MeanShift`,
+  which raised an ``AttributeError`` when set to a value, and remove a
+  leftover ``print()`` in its bandwidth estimation.
+  :pr:`483` by :user:`adityasingh2400`
+
 v0.12 (July 2026)
 -----------------
 
