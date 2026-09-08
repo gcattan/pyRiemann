@@ -6,6 +6,7 @@ from pytest import approx
 from pyriemann.geometry.distance import distance
 from pyriemann.optimization.grassmann import (
     _get_rotation_manifold,
+    _get_rotation_tangentspace,
     _grad,
     _loss,
 )
@@ -68,3 +69,18 @@ def test_get_rotation_manifold(metric, get_mats, get_weights):
 
     assert Q.shape == (n_channels, n_channels)
     assert _is_orth(Q)
+
+
+@pytest.mark.parametrize("expl_var", [0.999, 4])
+def test_get_rotation_tangentspace(rndstate, expl_var):
+    """Test that Procrustes analysis maps source onto target"""
+    n_vectors, n_ts = 20, 4
+    X_source = rndstate.randn(n_vectors, n_ts)
+    rotation = np.linalg.qr(rndstate.randn(n_ts, n_ts))[0]
+    X_target = X_source @ rotation
+
+    Q = _get_rotation_tangentspace(X_source, X_target, expl_var)
+    assert _is_orth(Q)
+
+    assert_array_almost_equal(Q, rotation)
+    assert_array_almost_equal(X_source @ Q, X_target)

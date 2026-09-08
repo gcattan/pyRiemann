@@ -71,6 +71,11 @@ v0.13.dev
   diagonalizes a non-symmetric matrix with ``numpy.linalg.eigh``.
   :pr:`492` by :user:`adityasingh2400`
 
+- Correct rotation estimation of :class:`pyriemann.transfer.TLRotate` in tangent space, which applied the
+  transpose of the Procrustes rotation, ie the inverse of the rotation mapping
+  each source domain onto the target domain.
+  :pr:`481` by :user:`adityasingh2400`
+
 v0.12 (July 2026)
 -----------------
 

@@ -654,6 +654,9 @@ class TLRotate(TransformerMixin, BaseEstimator):
         Add support for multisource domains in tangent space.
     .. versionchanged:: 0.11
         Add parameters ``tol_step`` and ``maxiter``.
+    .. versionchanged:: 0.13
+        Correct loss and gradient for rotation in manifold.
+        Correct estimation of rotation in tangent space.
 
     See Also
     --------

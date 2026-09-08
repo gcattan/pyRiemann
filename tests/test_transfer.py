@@ -41,7 +41,6 @@ from pyriemann.transfer import (
 from pyriemann.utils._check import check_weights
 
 pytestmark = pytest.mark.numpy_only
-rndstate = 1234
 
 
 ###############################################################################
@@ -468,13 +467,38 @@ def test_tlrotate_tangentspace(rndstate, get_weights, expl_var,
 
     X_rot = tlrot.fit_transform(X, y_enc, sample_weight=weights)
     assert X_rot.shape == X.shape
-    assert_array_equal(
-        X_rot[domain == "target_domain"],
-        X[domain == "target_domain"],
-    )
+    assert_array_equal(X_rot[domain == "tgt"], X[domain == "tgt"])
 
     X_rot = tlrot.transform(X)
     assert_array_equal(X_rot, X)
+
+
+def test_tlrotate_tangentspace_recovers_rotation(rndstate):
+    """Test that rotating vectors brings source domain onto target domain"""
+    n_ts, n_vectors_d = 4, 60
+    X_src = rndstate.randn(n_vectors_d, n_ts)
+    y = rndstate.randint(0, 2, size=n_vectors_d)
+    X_src += 3 * np.take(np.eye(n_ts)[:2], y, axis=0)  # separate classes
+    rotation = np.linalg.qr(rndstate.randn(n_ts, n_ts))[0]
+    X_tgt = X_src @ rotation
+
+    X = np.concatenate([X_tgt, X_src])
+    domain = np.array(n_vectors_d * ["tgt"] + n_vectors_d * ["src"])
+    _, y_enc = encode_domains(X, np.concatenate([y, y]), domain)
+
+    tlrot = TLRotate(target_domain="tgt", n_components=1, n_clusters=2)
+    X_rot = tlrot.fit_transform(X, y_enc)
+
+    # the rotation must map the source domain onto the target domain
+    for label in np.unique(y):
+        m_tgt = np.mean(X_tgt[y == label], axis=0)
+        dist_before = np.linalg.norm(
+            np.mean(X_src[y == label], axis=0) - m_tgt
+        )
+        dist_after = np.linalg.norm(
+            np.mean(X_rot[domain == "src"][y == label], axis=0) - m_tgt
+        )
+        assert dist_after < dist_before / 10
 
 
 ###############################################################################

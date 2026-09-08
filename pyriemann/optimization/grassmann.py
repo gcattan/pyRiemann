@@ -300,6 +300,8 @@ def _get_rotation_tangentspace(X_source, X_target, expl_var):
     Notes
     -----
     .. versionadded:: 0.8
+    .. versionchanged:: 0.13
+        Correct rotation estimation.
 
     References
     ----------
@@ -323,4 +325,4 @@ def _get_rotation_tangentspace(X_source, X_target, expl_var):
 
     u = u[:, :n_comps]
     vh = vh[:n_comps, :]
-    return vh.T @ u.T
+    return u @ vh
