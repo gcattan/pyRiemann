@@ -1,0 +1,19 @@
+tests/test_geometry_covariance.py
+  s_25705f27b7243e::t_dc860b243c4076 222-231,234,240,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9a00527ba6997fba1552e1c7c04c47385090ca69",
+  "prompts": {},
+  "sessions": {
+    "s_25705f27b7243e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c261106f-727d-4679-9515-960d8a09cb0e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Gregoire CATTAN <gregoire.cattan@ibm.com>"
+    }
+  }
+}
