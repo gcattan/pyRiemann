@@ -10,6 +10,13 @@ A catalog of new features, improvements, and bug-fixes in each release.
 v0.13.dev
 ---------
 
+- Speed up :func:`pyriemann.geometry.covariance.covariances_EP` for the
+  ``"scm"`` estimator, by computing the covariance blockwise rather than
+  concatenating a broadcast prototype, so that the constant prototype block
+  is estimated once rather than once per matrix: about 3x faster on a set of
+  5000 matrices. Results are unchanged.
+  :pr:`XXX` by :user:`gcattan`
+
 - Update pyRiemann from Python 3.10 - 3.12 to 3.11 - 3.13.
   :pr:`462` by :user:`qbarthelemy`
 
@@ -358,7 +365,7 @@ v0.7 (October 2024)
 - Enhance :class:`pyriemann.spatialfilters.CSP` adding parameter ``ajd_method``.
   :pr:`313` by :user:`qbarthelemy`
 
-- Add :func:`pyriemann.geometry.distance.distance_poweuclid` and 
+- Add :func:`pyriemann.geometry.distance.distance_poweuclid` and
   :func:`pyriemann.geometry.mean.mean_poweuclid` to use power Euclidean metric.
   :pr:`312` by :user:`qbarthelemy`
 
@@ -426,7 +433,7 @@ v0.6 (April 2024)
   and :func:`pyriemann.utils.viz.plot_cov_ellipse` for display.
   :pr:`287` by :user:`qbarthelemy` and :user:`gcattan`
 
-- Add :class:`pyriemann.estimation.CrossSpectra`, and 
+- Add :class:`pyriemann.estimation.CrossSpectra`, and
   deprecate ``pyriemann.estimation.CospCovariances`` renamed into :class:`pyriemann.estimation.CoSpectra`.
   :pr:`288` by :user:`qbarthelemy`
 

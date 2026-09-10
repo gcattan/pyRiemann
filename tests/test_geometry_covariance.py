@@ -191,6 +191,31 @@ def test_covariances_ep_broadcasting(estimator, get_mats, rndstate):
     assert C5[0, 0, 0] == approx(C2)
 
 
+@pytest.mark.numpy_only
+@pytest.mark.parametrize("assume_centered", [False, True])
+@pytest.mark.parametrize("n_channels_x, n_channels_p", [(5, 3), (1, 2)])
+def test_covariances_ep_blockwise_matches_general(
+    assume_centered, n_channels_x, n_channels_p, rndstate
+):
+    """The blockwise path must agree with concatenate-then-estimate.
+
+    covariances_EP computes "scm" blockwise; this pins that against the
+    general path, which the 4d input below still takes.
+    """
+    n_matrices, n_times = 6, 40
+    X = rndstate.randn(n_matrices, n_channels_x, n_times) + 1.2
+    P = rndstate.randn(n_channels_p, n_times) - 0.4
+
+    fast = covariances_EP(
+        X, P, estimator="scm", assume_centered=assume_centered
+    )
+    # A leading axis sends the same data down the general path.
+    general = covariances_EP(
+        X[np.newaxis], P, estimator="scm", assume_centered=assume_centered
+    )[0]
+    assert fast == approx(general)
+
+
 @pytest.mark.parametrize("estimator", estimators)
 def test_covariances_x(estimator, get_mats):
     if estimator == "mcd":

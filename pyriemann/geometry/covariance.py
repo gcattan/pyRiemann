@@ -1,6 +1,7 @@
 from functools import wraps
 import warnings
 
+import numpy as np
 from array_api_compat import array_namespace as get_namespace, device as xpd
 from scipy.stats import chi2
 
@@ -518,11 +519,60 @@ def covariances_EP(X, P, estimator="cov", **kwds):
     if n_times_p != n_times:
         raise ValueError(
             f"X and P do not have the same n_times: {n_times} and {n_times_p}")
+
+    fast = _covariances_EP_blockwise(X, P, estimator, **kwds)
+    if fast is not None:
+        return fast
+
     P_broadcast = xp.broadcast_to(
         P, (*original_shape[:-2], n_channels_proto, n_times)
     )
     PX = xp.concat((P_broadcast, X), axis=-2)
     return est(PX, **kwds)
+
+
+def _covariances_EP_blockwise(X, P, estimator, assume_centered=False, **kwds):
+    """Covariance of [P; X] blockwise, or None when not applicable.
+
+    Broadcasting P over the trials recomputes the constant P.P^T block once
+    per trial, and materializes an (..., n_channels_proto + n_channels,
+    n_times) temporary. The empirical covariance is bilinear, so it splits
+    into blocks
+
+        [[P.P^T, P.X^T],
+         [X.P^T, X.X^T]]
+
+    where only the last two depend on the trial: P.P^T is computed once and
+    nothing is concatenated. Restricted to the sample covariance, the only
+    estimator that is this decomposition; shrinkage estimators are nonlinear
+    functions of the whole matrix, and take the general path.
+    """
+    if estimator != "scm":
+        return None
+    if not (isinstance(X, np.ndarray) and isinstance(P, np.ndarray)):
+        return None
+    if X.ndim != 3 or not np.isrealobj(X) or not np.isrealobj(P) or kwds:
+        return None
+
+    n_times = X.shape[-1]
+    if not assume_centered:
+        P = P - np.mean(P, axis=-1, keepdims=True)
+        X = X - np.mean(X, axis=-1, keepdims=True)
+
+    n_trials, n_channels, _ = X.shape
+    n_channels_proto = P.shape[0]
+
+    pp = (P / n_times) @ P.T                       # once, not per trial
+    px = np.einsum("pt,nxt->npx", P / n_times, X)
+    xx = (X / n_times) @ np.swapaxes(X, -1, -2)
+
+    n = n_channels_proto + n_channels
+    out = np.empty((n_trials, n, n), dtype=xx.dtype)
+    out[:, :n_channels_proto, :n_channels_proto] = pp
+    out[:, :n_channels_proto, n_channels_proto:] = px
+    out[:, n_channels_proto:, :n_channels_proto] = np.swapaxes(px, -1, -2)
+    out[:, n_channels_proto:, n_channels_proto:] = xx
+    return out
 
 
 @deprecated(
